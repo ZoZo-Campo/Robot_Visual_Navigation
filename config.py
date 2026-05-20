@@ -26,9 +26,9 @@ NETWORK_TYPE = "walk"
 # STREET VIEW
 # =========================================================
 
-IMAGE_SIZE = "640x640"
+IMAGE_SIZE = "1280x720"
 
-FOV = 100
+FOV = 120
 PITCH = -5
 
 RADIUS = 8

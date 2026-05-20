@@ -8,10 +8,12 @@ class FrameExtractor:
         video_path,
         output_dir,
         fps=1,
+        frame_step_seconds=2,
     ):
         self.video_path = video_path
         self.output_dir = output_dir
         self.fps = fps
+        self.frame_step_seconds = frame_step_seconds
 
     def extract_frames(
         self,
@@ -24,7 +26,9 @@ class FrameExtractor:
         )
 
         if clear_output:
-            for file in os.listdir(self.output_dir):
+            for file in os.listdir(
+                self.output_dir
+            ):
                 if file.lower().endswith(
                     (".jpg", ".jpeg", ".png")
                 ):
@@ -59,7 +63,7 @@ class FrameExtractor:
 
         frame_interval = max(
             1,
-            int(video_fps / self.fps)
+            int(video_fps * self.frame_step_seconds)
         )
 
         saved_count = 0
@@ -99,5 +103,6 @@ class FrameExtractor:
             "video_fps": video_fps,
             "total_frames": total_frames,
             "saved_frames": saved_count,
+            "frame_step_seconds": self.frame_step_seconds,
             "output_dir": self.output_dir,
         }

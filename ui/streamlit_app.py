@@ -16,7 +16,7 @@ BASE_DIR = os.path.dirname(
 sys.path.append(BASE_DIR)
 
 from config import *
-
+from matching.dino_matcher import DINOMatcher
 from core.route_planner import RoutePlanner
 from core.streetview_client import StreetViewClient
 from core.frame_extractor import FrameExtractor
@@ -353,7 +353,15 @@ def run_matching(
             top_k=top_k,
             progress_callback=progress_callback,
         )
+    if mode == "DINO":
+        dino = DINOMatcher()
 
+        return dino.search(
+            image_path,
+            database_dir,
+            top_k=top_k,
+            progress_callback=progress_callback,
+        )
     orb, cnn, hybrid = create_matchers()
 
     orb_results = orb.search(
@@ -562,6 +570,7 @@ matching_mode_global = st.sidebar.selectbox(
     [
         "ORB",
         "CNN",
+        "DINO",
         "Hybrid"
     ],
     index=2
@@ -1149,7 +1158,7 @@ with tab_replay:
     )
 
     uploaded_video = st.file_uploader(
-        "Upload robot video",
+        "Upload robot video 1fps toutes les 2 secondes",
         type=["mp4", "mov", "m4v"]
     )
 
@@ -1235,6 +1244,7 @@ with tab_replay:
             [
                 "ORB",
                 "CNN",
+                "DINO",
                 "Hybrid"
             ],
             index=2

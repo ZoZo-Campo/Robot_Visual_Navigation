@@ -1,21 +1,12 @@
 import os
 import time
 
-from replay.replay_matcher import (
-    ReplayMatcher
-)
+from replay.replay_matcher import ReplayMatcher
 
-from matching.orb_matcher import (
-    ORBMatcher
-)
-
-from matching.cnn_matcher import (
-    CNNMatcher
-)
-
-from matching.hybrid_matcher import (
-    HybridMatcher
-)
+from matching.orb_matcher import ORBMatcher
+from matching.cnn_matcher import CNNMatcher
+from matching.dino_matcher import DINOMatcher
+from matching.hybrid_matcher import HybridMatcher
 
 
 class ReplayLocalizer:
@@ -31,11 +22,10 @@ class ReplayLocalizer:
         cnn_image_size=224,
         orb_weight=0.4,
         cnn_weight=0.6,
-        search_window=3,
-        max_jump=3,
-        min_score=40,
+        search_window=6,
+        max_jump=6,
+        min_score=35,
     ):
-
         self.database_dir = database_dir
         self.metadata_file = metadata_file
         self.matching_mode = matching_mode
@@ -44,12 +34,9 @@ class ReplayLocalizer:
         self.search_window = search_window
         self.max_jump = max_jump
         self.min_score = min_score
-
         self.last_match_index = None
 
-        self.replay_matcher = ReplayMatcher(
-            metadata_file
-        )
+        self.replay_matcher = ReplayMatcher(metadata_file)
 
         self.orb = ORBMatcher(
             n_features=orb_features,
@@ -60,80 +47,49 @@ class ReplayLocalizer:
             image_size=cnn_image_size
         )
 
+        self.dino = DINOMatcher()
+
         self.hybrid = HybridMatcher(
             orb_weight=orb_weight,
             cnn_weight=cnn_weight,
         )
 
-    # =====================================================
-    # GET DATABASE IMAGES
-    # =====================================================
-
     def get_database_images(self):
-
         return sorted(
-            file for file in os.listdir(
-                self.database_dir
-            )
-            if file.lower().endswith(
-                (
-                    ".jpg",
-                    ".jpeg",
-                    ".png"
-                )
-            )
+            file for file in os.listdir(self.database_dir)
+            if file.lower().endswith((".jpg", ".jpeg", ".png"))
         )
 
-    # =====================================================
-    # GET SEARCH WINDOW
-    # =====================================================
-
-    def get_candidate_images(
-        self,
-        database_images,
-    ):
-
+    def get_candidate_images(self, database_images):
         if self.last_match_index is None:
             return database_images
 
         start_index = max(
             0,
-            self.last_match_index
-            - self.search_window
+            self.last_match_index - self.search_window
         )
 
         end_index = min(
             len(database_images),
-            self.last_match_index
-            + self.search_window
-            + 1
+            self.last_match_index + self.search_window + 1
         )
 
-        return database_images[
-            start_index:end_index
-        ]
-
-    # =====================================================
-    # LOCAL SEARCH
-    # =====================================================
+        return database_images[start_index:end_index]
 
     def local_search(
         self,
         frame_path,
         candidate_images,
     ):
-
         results = []
 
         for filename in candidate_images:
-
             image_path = os.path.join(
                 self.database_dir,
                 filename
             )
 
             if self.matching_mode == "ORB":
-
                 comparison = self.orb.compare_images(
                     frame_path,
                     image_path
@@ -146,7 +102,6 @@ class ReplayLocalizer:
                 }
 
             elif self.matching_mode == "CNN":
-
                 comparison = self.cnn.compare_images(
                     frame_path,
                     image_path
@@ -157,14 +112,24 @@ class ReplayLocalizer:
                     "score": comparison["score"],
                 }
 
-            else:
+            elif self.matching_mode == "DINO":
+                comparison = self.dino.compare_images(
+                    frame_path,
+                    image_path
+                )
 
+                result = {
+                    "filename": filename,
+                    "score": comparison["score"],
+                }
+
+            else:
                 orb_comparison = self.orb.compare_images(
                     frame_path,
                     image_path
                 )
 
-                cnn_comparison = self.cnn.compare_images(
+                dino_comparison = self.dino.compare_images(
                     frame_path,
                     image_path
                 )
@@ -172,7 +137,7 @@ class ReplayLocalizer:
                 fused_score = (
                     self.hybrid.compute_hybrid_score(
                         orb_score=orb_comparison["score"],
-                        cnn_score=cnn_comparison["score"],
+                        cnn_score=dino_comparison["score"],
                     )
                 )
 
@@ -180,7 +145,7 @@ class ReplayLocalizer:
                     "filename": filename,
                     "score": fused_score,
                     "orb_score": orb_comparison["score"],
-                    "cnn_score": cnn_comparison["score"],
+                    "dino_score": dino_comparison["score"],
                     "good_matches": orb_comparison["good_matches"],
                 }
 
@@ -193,16 +158,11 @@ class ReplayLocalizer:
 
         return results[:self.top_k]
 
-    # =====================================================
-    # CANDIDATE VALIDATION
-    # =====================================================
-
     def validate_candidate(
         self,
         candidate,
         database_images,
     ):
-
         if candidate["score"] < self.min_score:
             return None
 
@@ -211,15 +171,11 @@ class ReplayLocalizer:
         if filename not in database_images:
             return None
 
-        current_index = database_images.index(
-            filename
-        )
+        current_index = database_images.index(filename)
 
         if self.last_match_index is not None:
-
             jump = abs(
-                current_index
-                - self.last_match_index
+                current_index - self.last_match_index
             )
 
             if jump > self.max_jump:
@@ -227,15 +183,10 @@ class ReplayLocalizer:
 
         return current_index
 
-    # =====================================================
-    # LOCALIZE FRAME
-    # =====================================================
-
     def localize_frame(
         self,
         frame_path,
     ):
-
         database_images = self.get_database_images()
 
         candidate_images = self.get_candidate_images(
@@ -243,8 +194,7 @@ class ReplayLocalizer:
         )
 
         print(
-            f"Search window: "
-            f"{len(candidate_images)} images"
+            f"Search window: {len(candidate_images)} images"
         )
 
         results = self.local_search(
@@ -259,7 +209,6 @@ class ReplayLocalizer:
         best_index = None
 
         for candidate in results:
-
             current_index = self.validate_candidate(
                 candidate,
                 database_images
@@ -275,58 +224,36 @@ class ReplayLocalizer:
         if best is None:
             return None
 
-        best = self.replay_matcher.attach_gps(
-            best
-        )
+        best = self.replay_matcher.attach_gps(best)
 
         self.last_match_index = best_index
 
         return best
-
-    # =====================================================
-    # FULL REPLAY LOCALIZATION
-    # =====================================================
 
     def localize_frames(
         self,
         frames_dir,
         progress_callback=None,
     ):
-
         frame_files = sorted(
-            file for file in os.listdir(
-                frames_dir
-            )
-            if file.lower().endswith(
-                (
-                    ".jpg",
-                    ".jpeg",
-                    ".png"
-                )
-            )
+            file for file in os.listdir(frames_dir)
+            if file.lower().endswith((".jpg", ".jpeg", ".png"))
         )
 
         replay_results = []
 
         total = len(frame_files)
-
         start_time = time.time()
 
-        for i, filename in enumerate(
-            frame_files
-        ):
-
+        for i, filename in enumerate(frame_files):
             frame_path = os.path.join(
                 frames_dir,
                 filename
             )
 
-            best = self.localize_frame(
-                frame_path
-            )
+            best = self.localize_frame(frame_path)
 
             if best is not None:
-
                 replay_results.append({
                     "frame": filename,
                     "best_match": best.get("filename"),
@@ -337,20 +264,13 @@ class ReplayLocalizer:
                 })
 
             if progress_callback is not None:
-
                 elapsed = time.time() - start_time
 
                 remaining = 0
 
                 if i > 0:
-                    estimated_total = (
-                        elapsed / (i + 1)
-                    ) * total
-
-                    remaining = (
-                        estimated_total
-                        - elapsed
-                    )
+                    estimated_total = elapsed / (i + 1) * total
+                    remaining = estimated_total - elapsed
 
                 progress_callback(
                     current=i + 1,
