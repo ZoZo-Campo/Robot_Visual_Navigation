@@ -3,6 +3,7 @@ import csv
 
 
 class ReplayMatcher:
+
     def __init__(
         self,
         metadata_file,
@@ -23,9 +24,11 @@ class ReplayMatcher:
             "r",
             encoding="utf-8"
         ) as f:
+
             reader = csv.DictReader(f)
 
             for row in reader:
+
                 image_file = row.get(
                     "image_file",
                     ""
@@ -39,8 +42,13 @@ class ReplayMatcher:
 
         return metadata
 
-    def attach_gps(self, result):
-        filename = result.get("filename")
+    def attach_gps(
+        self,
+        result,
+    ):
+        filename = result.get(
+            "filename"
+        )
 
         meta = self.metadata.get(
             filename
@@ -71,25 +79,39 @@ class ReplayMatcher:
             exist_ok=True
         )
 
+        fieldnames = [
+            "frame",
+            "best_match",
+            "score",
+            "cnn_score",
+            "dino_score",
+            "lat",
+            "lon",
+            "match_index",
+        ]
+
         with open(
             output_file,
             "w",
             encoding="utf-8",
             newline=""
         ) as f:
+
             writer = csv.DictWriter(
                 f,
-                fieldnames=[
-                    "frame",
-                    "best_match",
-                    "score",
-                    "lat",
-                    "lon",
-                    "match_index",
-                ]
+                fieldnames=fieldnames,
+                extrasaction="ignore",
             )
 
             writer.writeheader()
 
             for item in results:
-                writer.writerow(item)
+
+                clean_item = {
+                    key: item.get(key)
+                    for key in fieldnames
+                }
+
+                writer.writerow(
+                    clean_item
+                )

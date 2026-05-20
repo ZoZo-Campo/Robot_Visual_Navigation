@@ -1266,13 +1266,17 @@ with tab_replay:
                 metadata_file=METADATA_FILE,
                 matching_mode=replay_matching_mode,
                 top_k=5,
-                orb_features=ORB_FEATURES,
-                orb_distance_threshold=ORB_DISTANCE_THRESHOLD,
+
                 cnn_image_size=CNN_IMAGE_SIZE,
-                orb_weight=ORB_WEIGHT,
-                cnn_weight=CNN_WEIGHT,
-                search_window=3,
-                max_jump=3,
+
+                cnn_weight=0.45,
+                dino_weight=0.55,
+
+                search_window=12,
+
+                max_forward_jump=12,
+                max_backward_jump=3,
+
                 min_score=40,
             )
 

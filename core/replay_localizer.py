@@ -3,10 +3,8 @@ import time
 
 from replay.replay_matcher import ReplayMatcher
 
-from matching.orb_matcher import ORBMatcher
 from matching.cnn_matcher import CNNMatcher
 from matching.dino_matcher import DINOMatcher
-from matching.hybrid_matcher import HybridMatcher
 
 
 class ReplayLocalizer:
@@ -17,13 +15,12 @@ class ReplayLocalizer:
         metadata_file,
         matching_mode="Hybrid",
         top_k=5,
-        orb_features=3000,
-        orb_distance_threshold=55,
         cnn_image_size=224,
-        orb_weight=0.4,
-        cnn_weight=0.6,
-        search_window=6,
-        max_jump=6,
+        cnn_weight=0.45,
+        dino_weight=0.55,
+        search_window=12,
+        max_forward_jump=12,
+        max_backward_jump=3,
         min_score=35,
     ):
         self.database_dir = database_dir
@@ -31,16 +28,18 @@ class ReplayLocalizer:
         self.matching_mode = matching_mode
         self.top_k = top_k
 
+        self.cnn_weight = cnn_weight
+        self.dino_weight = dino_weight
+
         self.search_window = search_window
-        self.max_jump = max_jump
+        self.max_forward_jump = max_forward_jump
+        self.max_backward_jump = max_backward_jump
         self.min_score = min_score
+
         self.last_match_index = None
 
-        self.replay_matcher = ReplayMatcher(metadata_file)
-
-        self.orb = ORBMatcher(
-            n_features=orb_features,
-            distance_threshold=orb_distance_threshold,
+        self.replay_matcher = ReplayMatcher(
+            metadata_file
         )
 
         self.cnn = CNNMatcher(
@@ -49,18 +48,26 @@ class ReplayLocalizer:
 
         self.dino = DINOMatcher()
 
-        self.hybrid = HybridMatcher(
-            orb_weight=orb_weight,
-            cnn_weight=cnn_weight,
-        )
+    # =====================================================
+    # DATABASE
+    # =====================================================
 
     def get_database_images(self):
         return sorted(
             file for file in os.listdir(self.database_dir)
-            if file.lower().endswith((".jpg", ".jpeg", ".png"))
+            if file.lower().endswith(
+                (".jpg", ".jpeg", ".png")
+            )
         )
 
-    def get_candidate_images(self, database_images):
+    # =====================================================
+    # LOCAL WINDOW AROUND PREVIOUS MATCH
+    # =====================================================
+
+    def get_candidate_images(
+        self,
+        database_images,
+    ):
         if self.last_match_index is None:
             return database_images
 
@@ -76,6 +83,25 @@ class ReplayLocalizer:
 
         return database_images[start_index:end_index]
 
+    # =====================================================
+    # HYBRID CNN + DINO SCORE
+    # =====================================================
+
+    def compute_hybrid_score(
+        self,
+        cnn_score,
+        dino_score,
+    ):
+        return (
+            self.cnn_weight * cnn_score
+            +
+            self.dino_weight * dino_score
+        )
+
+    # =====================================================
+    # LOCAL SEARCH
+    # =====================================================
+
     def local_search(
         self,
         frame_path,
@@ -84,69 +110,62 @@ class ReplayLocalizer:
         results = []
 
         for filename in candidate_images:
+
             image_path = os.path.join(
                 self.database_dir,
                 filename
             )
 
-            if self.matching_mode == "ORB":
-                comparison = self.orb.compare_images(
+            if self.matching_mode == "CNN":
+
+                cnn_result = self.cnn.compare_images(
                     frame_path,
                     image_path
                 )
 
                 result = {
                     "filename": filename,
-                    "score": comparison["score"],
-                    "good_matches": comparison["good_matches"],
-                }
-
-            elif self.matching_mode == "CNN":
-                comparison = self.cnn.compare_images(
-                    frame_path,
-                    image_path
-                )
-
-                result = {
-                    "filename": filename,
-                    "score": comparison["score"],
+                    "score": cnn_result["score"],
+                    "cnn_score": cnn_result["score"],
+                    "dino_score": None,
                 }
 
             elif self.matching_mode == "DINO":
-                comparison = self.dino.compare_images(
+
+                dino_result = self.dino.compare_images(
                     frame_path,
                     image_path
                 )
 
                 result = {
                     "filename": filename,
-                    "score": comparison["score"],
+                    "score": dino_result["score"],
+                    "cnn_score": None,
+                    "dino_score": dino_result["score"],
                 }
 
             else:
-                orb_comparison = self.orb.compare_images(
+
+                cnn_result = self.cnn.compare_images(
                     frame_path,
                     image_path
                 )
 
-                dino_comparison = self.dino.compare_images(
+                dino_result = self.dino.compare_images(
                     frame_path,
                     image_path
                 )
 
-                fused_score = (
-                    self.hybrid.compute_hybrid_score(
-                        orb_score=orb_comparison["score"],
-                        cnn_score=dino_comparison["score"],
-                    )
+                score = self.compute_hybrid_score(
+                    cnn_score=cnn_result["score"],
+                    dino_score=dino_result["score"],
                 )
 
                 result = {
                     "filename": filename,
-                    "score": fused_score,
-                    "orb_score": orb_comparison["score"],
-                    "dino_score": dino_comparison["score"],
-                    "good_matches": orb_comparison["good_matches"],
+                    "score": score,
+                    "cnn_score": cnn_result["score"],
+                    "dino_score": dino_result["score"],
                 }
 
             results.append(result)
@@ -157,6 +176,10 @@ class ReplayLocalizer:
         )
 
         return results[:self.top_k]
+
+    # =====================================================
+    # CANDIDATE VALIDATION
+    # =====================================================
 
     def validate_candidate(
         self,
@@ -171,17 +194,25 @@ class ReplayLocalizer:
         if filename not in database_images:
             return None
 
-        current_index = database_images.index(filename)
+        current_index = database_images.index(
+            filename
+        )
 
         if self.last_match_index is not None:
-            jump = abs(
-                current_index - self.last_match_index
-            )
 
-            if jump > self.max_jump:
+            delta = current_index - self.last_match_index
+
+            if delta > self.max_forward_jump:
+                return None
+
+            if delta < -self.max_backward_jump:
                 return None
 
         return current_index
+
+    # =====================================================
+    # LOCALIZE ONE FRAME
+    # =====================================================
 
     def localize_frame(
         self,
@@ -199,7 +230,7 @@ class ReplayLocalizer:
 
         results = self.local_search(
             frame_path,
-            candidate_images,
+            candidate_images
         )
 
         if not results:
@@ -209,6 +240,7 @@ class ReplayLocalizer:
         best_index = None
 
         for candidate in results:
+
             current_index = self.validate_candidate(
                 candidate,
                 database_images
@@ -224,11 +256,19 @@ class ReplayLocalizer:
         if best is None:
             return None
 
-        best = self.replay_matcher.attach_gps(best)
+        best = self.replay_matcher.attach_gps(
+            best
+        )
 
         self.last_match_index = best_index
 
+        best["match_index"] = best_index
+
         return best
+
+    # =====================================================
+    # LOCALIZE ALL FRAMES
+    # =====================================================
 
     def localize_frames(
         self,
@@ -237,7 +277,9 @@ class ReplayLocalizer:
     ):
         frame_files = sorted(
             file for file in os.listdir(frames_dir)
-            if file.lower().endswith((".jpg", ".jpeg", ".png"))
+            if file.lower().endswith(
+                (".jpg", ".jpeg", ".png")
+            )
         )
 
         replay_results = []
@@ -246,31 +288,43 @@ class ReplayLocalizer:
         start_time = time.time()
 
         for i, filename in enumerate(frame_files):
+
             frame_path = os.path.join(
                 frames_dir,
                 filename
             )
 
-            best = self.localize_frame(frame_path)
+            best = self.localize_frame(
+                frame_path
+            )
 
             if best is not None:
+
                 replay_results.append({
                     "frame": filename,
                     "best_match": best.get("filename"),
                     "score": best.get("score"),
+                    "cnn_score": best.get("cnn_score"),
+                    "dino_score": best.get("dino_score"),
                     "lat": best.get("lat"),
                     "lon": best.get("lon"),
-                    "match_index": self.last_match_index,
+                    "match_index": best.get("match_index"),
                 })
 
             if progress_callback is not None:
-                elapsed = time.time() - start_time
 
+                elapsed = time.time() - start_time
                 remaining = 0
 
                 if i > 0:
-                    estimated_total = elapsed / (i + 1) * total
-                    remaining = estimated_total - elapsed
+                    estimated_total = (
+                        elapsed / (i + 1)
+                    ) * total
+
+                    remaining = (
+                        estimated_total
+                        - elapsed
+                    )
 
                 progress_callback(
                     current=i + 1,

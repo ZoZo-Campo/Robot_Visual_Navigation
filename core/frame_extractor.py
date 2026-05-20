@@ -80,6 +80,12 @@ class FrameExtractor:
                     self.output_dir,
                     f"frame_{saved_count:05d}.jpg"
                 )
+                h = frame.shape[0]
+
+                frame = frame[
+                    0:int(h * 0.75),
+                    :
+                ]
 
                 cv2.imwrite(
                     filename,
