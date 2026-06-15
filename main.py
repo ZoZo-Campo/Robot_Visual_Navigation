@@ -1,8 +1,8 @@
 from core.gps_utils import *
 
 # Entry point kept for optional command-line tests.
-# The main application is launched from ui/streamlit_app.py.
-# python -m streamlit run ui/streamlit_app.py
+# The V3 application is launched from ui/streamlit_app.py.
+# ./scripts/run_mac.sh
 
 p1 = (50.104493, 14.394761)
 p2 = (50.105000, 14.395500)

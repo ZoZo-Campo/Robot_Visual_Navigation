@@ -76,16 +76,11 @@ class FrameExtractor:
                 break
 
             if frame_index % frame_interval == 0:
+
                 filename = os.path.join(
                     self.output_dir,
                     f"frame_{saved_count:05d}.jpg"
                 )
-                h = frame.shape[0]
-
-                frame = frame[
-                    0:int(h * 0.75),
-                    :
-                ]
 
                 cv2.imwrite(
                     filename,

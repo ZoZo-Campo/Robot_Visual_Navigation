@@ -83,11 +83,17 @@ class ReplayMatcher:
             "frame",
             "best_match",
             "score",
-            "cnn_score",
-            "dino_score",
+            "mixvpr_score",
+            "lightweight_score",
             "lat",
             "lon",
             "match_index",
+            "active_match_index",
+            "confidence",
+            "search_start",
+            "search_stop",
+            "search_candidates",
+            "top_candidates",
         ]
 
         with open(

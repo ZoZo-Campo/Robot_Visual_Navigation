@@ -16,15 +16,12 @@ BASE_DIR = os.path.dirname(
 sys.path.append(BASE_DIR)
 
 from config import *
-from matching.dino_matcher import DINOMatcher
 from core.route_planner import RoutePlanner
 from core.streetview_client import StreetViewClient
 from core.frame_extractor import FrameExtractor
 from core.gps_utils import same_point
 from core.replay_localizer import ReplayLocalizer
-from matching.orb_matcher import ORBMatcher
-from matching.cnn_matcher import CNNMatcher
-from matching.hybrid_matcher import HybridMatcher
+from matching.vpr_matcher import SUPPORTED_MODES, VPRMatcher
 
 from replay.replay_matcher import ReplayMatcher
 
@@ -304,24 +301,6 @@ def draw_navigation_map():
     return map_data
 
 
-def create_matchers():
-    orb = ORBMatcher(
-        n_features=ORB_FEATURES,
-        distance_threshold=ORB_DISTANCE_THRESHOLD,
-    )
-
-    cnn = CNNMatcher(
-        image_size=CNN_IMAGE_SIZE
-    )
-
-    hybrid = HybridMatcher(
-        orb_weight=ORB_WEIGHT,
-        cnn_weight=CNN_WEIGHT,
-    )
-
-    return orb, cnn, hybrid
-
-
 def run_matching(
     image_path,
     mode,
@@ -329,57 +308,15 @@ def run_matching(
     top_k=5,
     progress_callback=None,
 ):
-    if mode == "ORB":
-        orb = ORBMatcher(
-            n_features=ORB_FEATURES,
-            distance_threshold=ORB_DISTANCE_THRESHOLD,
-        )
-
-        return orb.search(
-            image_path,
-            database_dir,
-            top_k=top_k,
-            progress_callback=progress_callback,
-        )
-
-    if mode == "CNN":
-        cnn = CNNMatcher(
-            image_size=CNN_IMAGE_SIZE
-        )
-
-        return cnn.search(
-            image_path,
-            database_dir,
-            top_k=top_k,
-            progress_callback=progress_callback,
-        )
-    if mode == "DINO":
-        dino = DINOMatcher()
-
-        return dino.search(
-            image_path,
-            database_dir,
-            top_k=top_k,
-            progress_callback=progress_callback,
-        )
-    orb, cnn, hybrid = create_matchers()
-
-    orb_results = orb.search(
-        image_path,
-        database_dir,
-        top_k=999999,
+    matcher = VPRMatcher(
+        database_dir=database_dir,
+        metadata_file=METADATA_FILE,
+        mode=mode,
     )
-
-    cnn_results = cnn.search(
-        image_path,
-        database_dir,
-        top_k=999999,
-    )
-
-    return hybrid.fuse_results(
-        orb_results,
-        cnn_results,
+    return matcher.search(
+        query_image_path=image_path,
         top_k=top_k,
+        progress_callback=progress_callback,
     )
 
 
@@ -420,6 +357,10 @@ def display_top_results(
     st.success(
         f"Best match: {best['filename']} — "
         f"{best['score']:.2f}%"
+    )
+    st.caption(
+        f"ROSA references: {best['references_after_filtering']}/"
+        f"{best['references_before_filtering']} retained"
     )
 
     if best["lat"] is not None:
@@ -467,16 +408,10 @@ def display_top_results(
             f"{result['score']:.2f}%"
         )
 
-        if "orb_score" in result:
-            line += (
-                f" | ORB {result['orb_score']:.2f}%"
-                f" | CNN {result['cnn_score']:.2f}%"
-            )
-
-        if "good_matches" in result:
-            line += (
-                f" | matches {result['good_matches']}"
-            )
+        if result.get("mixvpr_score") is not None:
+            line += f" | MixVPR {result['mixvpr_score']:.2f}%"
+        if result.get("lightweight_score") is not None:
+            line += f" | Lightweight {result['lightweight_score']:.2f}%"
 
         st.write(line)
 
@@ -486,7 +421,7 @@ def display_top_results(
 # =========================================================
 
 st.set_page_config(
-    page_title="Robot Visual Navigation V2",
+    page_title="Robot Visual Navigation V3",
     layout="wide"
 )
 
@@ -496,11 +431,11 @@ if os.path.exists(LOGO_PATH):
         width=160
     )
 
-st.title("Robot Visual Navigation V2")
+st.title("Robot Visual Navigation V3")
 
 st.write(
     "Route planning, Street View acquisition, "
-    "visual matching and offline replay localization."
+    "MixVPR visual matching, ROSA reference filtering and offline replay localization."
 )
 
 
@@ -516,6 +451,7 @@ defaults = {
     "last_clicked_point": None,
     "estimated_position": None,
     "replay_positions": [],
+    "replay_results": [],
     "current_query_image": None,
 }
 
@@ -567,13 +503,12 @@ heading_mode = st.sidebar.selectbox(
 
 matching_mode_global = st.sidebar.selectbox(
     "Default matching mode",
-    [
-        "ORB",
-        "CNN",
-        "DINO",
-        "Hybrid"
-    ],
-    index=2
+    list(SUPPORTED_MODES),
+    index=0
+)
+
+st.sidebar.caption(
+    "Backend: MixVPR 4096D + ROSA filtering + local window trajectory search"
 )
 
 
@@ -1102,12 +1037,8 @@ with tab_single_match:
 
     matching_mode = st.selectbox(
         "Matching method",
-        [
-            "ORB",
-            "CNN",
-            "Hybrid"
-        ],
-        index=2
+        list(SUPPORTED_MODES),
+        index=list(SUPPORTED_MODES).index(matching_mode_global),
     )
 
     if st.button(
@@ -1241,13 +1172,8 @@ with tab_replay:
 
         replay_matching_mode = st.selectbox(
             "Replay matching mode",
-            [
-                "ORB",
-                "CNN",
-                "DINO",
-                "Hybrid"
-            ],
-            index=2
+            list(SUPPORTED_MODES),
+            index=list(SUPPORTED_MODES).index(matching_mode_global),
         )
 
         if st.button(
@@ -1266,18 +1192,14 @@ with tab_replay:
                 metadata_file=METADATA_FILE,
                 matching_mode=replay_matching_mode,
                 top_k=5,
+                min_score=35,
+            )
 
-                cnn_image_size=CNN_IMAGE_SIZE,
-
-                cnn_weight=0.45,
-                dino_weight=0.55,
-
-                search_window=12,
-
-                max_forward_jump=12,
-                max_backward_jump=3,
-
-                min_score=40,
+            summary = localizer.database_summary
+            st.info(
+                f"ROSA retained {summary['references_after_filtering']}/"
+                f"{summary['references_before_filtering']} Street View images. "
+                f"Device: {summary['device']}."
             )
 
             def replay_progress(
@@ -1302,6 +1224,7 @@ with tab_replay:
                 frames_dir=FRAMES_DIR,
                 progress_callback=replay_progress,
             )
+            st.session_state.replay_results = replay_results
 
             for result in replay_results:
 
@@ -1330,6 +1253,36 @@ with tab_replay:
             st.write(
                 f"Valid localized frames: "
                 f"{len(replay_results)}"
+            )
+
+    if st.session_state.replay_results:
+        st.subheader("Robot frame to Street View matches")
+        st.dataframe(
+            st.session_state.replay_results,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        selected_row = st.slider(
+            "Match to inspect",
+            min_value=0,
+            max_value=len(st.session_state.replay_results) - 1,
+            value=0,
+        )
+        selected_match = st.session_state.replay_results[selected_row]
+        frame_path = os.path.join(FRAMES_DIR, selected_match["frame"])
+        streetview_path = os.path.join(STREETVIEW_IMAGES_DIR, selected_match["best_match"])
+        left, right = st.columns(2)
+        with left:
+            st.image(frame_path, caption=f"Robot: {selected_match['frame']}", width=500)
+        with right:
+            st.image(
+                streetview_path,
+                caption=(
+                    f"Street View: {selected_match['best_match']} | "
+                    f"score {selected_match['score']:.2f}%"
+                ),
+                width=500,
             )
 # =========================================================
 # TAB 5 — EXPORTS
@@ -1382,6 +1335,24 @@ with tab_exports:
                 "Download replay results",
                 data=f,
                 file_name="replay_results.csv"
+            )
+
+    vpr_localization_file = os.path.join(VPR_OUTPUT_DIR, "localization.csv")
+    if os.path.exists(vpr_localization_file):
+        with open(vpr_localization_file, "rb") as f:
+            st.download_button(
+                "Download detailed VPR localization",
+                data=f,
+                file_name="vpr_localization.csv",
+            )
+
+    vpr_filter_file = os.path.join(VPR_OUTPUT_DIR, "filter_manifest.csv")
+    if os.path.exists(vpr_filter_file):
+        with open(vpr_filter_file, "rb") as f:
+            st.download_button(
+                "Download ROSA filter manifest",
+                data=f,
+                file_name="filter_manifest.csv",
             )
 
     st.write("Project root:")

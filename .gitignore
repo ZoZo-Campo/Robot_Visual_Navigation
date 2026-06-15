@@ -5,3 +5,4 @@ venv/
 .venv/
 cache/
 data/robot_inputs/videos/
+data/results/vpr/
