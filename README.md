@@ -1,114 +1,57 @@
-# Robot Visual Navigation V2
+# Robot Visual Navigation V3
 
-Visual localization system based on Google Street View and image matching for mobile robot navigation.
+Streamlit application for route planning, Google Street View acquisition and
+robot visual localization.
 
----
+## V3 matching pipeline
 
-# Overview
+The interface uses the embedded VPR backend stored in this V3 folder and
+provides three matching modes:
 
-This project aims to localize a mobile robot using:
+- `MixVPR`: neural ResNet50 + MixVPR global descriptor with 4096 values.
+- `Lightweight VPR`: spatial-pyramid and color descriptors.
+- `Hybrid VPR`: rank fusion with 80% MixVPR and 20% lightweight VPR.
 
-- a precomputed GPS route,
-- Google Street View images,
-- computer vision matching,
-- offline replay localization from videos or images.
+Street View references are filtered with ROSA before matching. Video replay
+uses the first five references for initialization, then searches only the five
+forward references around the previous localization, with a 30 metre limit.
 
-The system can:
+The original `Robot_Visual_Navigation_V2` project is not modified.
 
-1. Generate a route using OpenStreetMap,
-2. Download a Street View database,
-3. Match robot images against the database,
-4. Estimate GPS position,
-5. Replay an entire robot video offline.
+## macOS setup
 
----
-
-# Main Features
-
-## Route Planning
-
-- Interactive map
-- GPS coordinate input
-- Multiple waypoints
-- OpenStreetMap routing
-- Adjustable GPS sampling step
-
----
-
-## Street View Database Generation
-
-- Automatic Street View download
-- Route-oriented heading
-- North-oriented heading
-- Metadata generation
-- Progress bar and live feedback
-
----
-
-## Visual Localization
-
-### ORB Matching
-- Fast local feature matching
-- Binary descriptors
-- Real-time friendly
-
-### CNN Matching
-- Deep feature extraction
-- ResNet18 backbone
-- Cosine similarity
-
-### Hybrid Matching
-- ORB + CNN fusion
-- Better robustness
-- Weighted score fusion
-
----
-
-## Replay Localization
-
-- Video frame extraction
-- Offline localization
-- Estimated trajectory reconstruction
-- CSV export
-
----
-
-# Project Structure
+The V3 folder is self-contained. It embeds the VPR backend and the local
+MixVPR checkpoint in:
 
 ```text
-Robot_Visual_Navigation_V2/
-│
-├── assets/
-│
-├── core/
-│   ├── frame_extractor.py
-│   ├── gps_utils.py
-│   ├── replay_localizer.py
-│   ├── route_planner.py
-│   └── streetview_client.py
-│
-├── matching/
-│   ├── cnn_matcher.py
-│   ├── hybrid_matcher.py
-│   └── orb_matcher.py
-│
-├── replay/
-│   └── replay_matcher.py
-│
-├── ui/
-│   └── streamlit_app.py
-│
-├── data/
-│   ├── frames/
-│   ├── results/
-│   ├── robot_inputs/
-│   │   ├── photos/
-│   │   └── videos/
-│   ├── routes/
-│   └── streetview/
-│       ├── cache/
-│       └── images/
-│
-├── config.py
-├── requirements.txt
-└── README.md
+Robot_Visual_Navigation_V3/
+  vpr_backend/
+  weights/resnet50_MixVPR_4096.ckpt
+```
+
+Activate the existing Python environment, then run:
+
+```bash
+chmod +x scripts/*.sh
+./scripts/setup_mac.sh
+streamlit run app.py
+```
+
+The app opens at `http://localhost:8501`.
+
+## Results
+
+The Replay tab displays each robot frame beside its selected Street View
+image. It also writes:
+
+```text
+data/results/replay_results.csv
+data/results/vpr/localization.csv
+data/results/vpr/filter_manifest.csv
+data/results/vpr/similarity.npy
+data/results/vpr/descriptors_robot_mixvpr.npy
+data/results/vpr/descriptors_streetview_mixvpr.npy
+```
+
+The `.csv` files are intended for direct inspection. The `.npy` files retain
+the numerical vectors and matrices for scientific analysis.

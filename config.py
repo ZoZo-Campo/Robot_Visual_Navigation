@@ -1,4 +1,12 @@
 # =========================================================
+# PROJECT
+# =========================================================
+
+import os
+
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# =========================================================
 # GOOGLE API
 # =========================================================
 
@@ -21,6 +29,10 @@ DEFAULT_ZOOM = 16
 
 STEP_M = 5
 NETWORK_TYPE = "walk"
+ROUTE_CACHE_DIR = os.path.join(PROJECT_DIR, "cache", "routes")
+ROUTE_DOWNLOAD_TIMEOUT_S = 60
+ROUTE_MAX_RADIUS_M = 2500
+ROUTE_USE_FALLBACK_DIRECT = True
 
 # =========================================================
 # STREET VIEW
@@ -64,3 +76,19 @@ CNN_WEIGHT = 0.6
 VIDEO_FRAME_EXTRACTION_FPS = 1
 
 REPLAY_SEARCH_WINDOW = 5
+
+# =========================================================
+# VPR BACKEND (embedded in this V3 folder)
+# =========================================================
+VPR_BACKEND_DIR = os.path.join(PROJECT_DIR, "vpr_backend")
+MIXVPR_CHECKPOINT = os.environ.get(
+    "MIXVPR_CHECKPOINT",
+    os.path.join(PROJECT_DIR, "weights", "resnet50_MixVPR_4096.ckpt"),
+)
+VPR_CACHE_DIR = os.path.join(PROJECT_DIR, "cache", "vpr")
+VPR_OUTPUT_DIR = os.path.join(PROJECT_DIR, "data", "results", "vpr")
+VPR_BATCH_SIZE = 8
+VPR_FILTER_ENABLED = True
+VPR_INITIAL_SEARCH_SIZE = 5
+VPR_WINDOW_FORWARD = 5
+VPR_MAX_WINDOW_DISTANCE_M = 30.0
