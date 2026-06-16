@@ -66,19 +66,16 @@ VIDEO_FRAME_EXTRACTION_FPS = 1
 REPLAY_SEARCH_WINDOW = 5
 
 # =========================================================
-# VPR BACKEND (Dev_Matching_V2)
+# VPR BACKEND (embedded in this V3 folder)
 # =========================================================
 
 import os
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-DEV_MATCHING_ROOT = os.environ.get(
-    "DEV_MATCHING_ROOT",
-    os.path.abspath(os.path.join(PROJECT_DIR, "..", "Dev_Matching_V2")),
-)
+VPR_BACKEND_DIR = os.path.join(PROJECT_DIR, "vpr_backend")
 MIXVPR_CHECKPOINT = os.environ.get(
     "MIXVPR_CHECKPOINT",
-    os.path.join(DEV_MATCHING_ROOT, "weights", "resnet50_MixVPR_4096.ckpt"),
+    os.path.join(PROJECT_DIR, "weights", "resnet50_MixVPR_4096.ckpt"),
 )
 VPR_CACHE_DIR = os.path.join(PROJECT_DIR, "cache", "vpr")
 VPR_OUTPUT_DIR = os.path.join(PROJECT_DIR, "data", "results", "vpr")

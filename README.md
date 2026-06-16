@@ -5,8 +5,8 @@ robot visual localization.
 
 ## V3 matching pipeline
 
-The interface uses the sibling `Dev_Matching_V2` backend and provides three
-matching modes:
+The interface uses the embedded VPR backend stored in this V3 folder and
+provides three matching modes:
 
 - `MixVPR`: neural ResNet50 + MixVPR global descriptor with 4096 values.
 - `Lightweight VPR`: spatial-pyramid and color descriptors.
@@ -20,12 +20,12 @@ The original `Robot_Visual_Navigation_V2` project is not modified.
 
 ## macOS setup
 
-Keep these projects next to each other:
+The V3 folder is self-contained. It embeds the VPR backend in:
 
 ```text
-Python/
-  Dev_Matching_V2/
-  Robot_Visual_Navigation_V3/
+Robot_Visual_Navigation_V3/
+  vpr_backend/
+  weights/
 ```
 
 Activate the existing Python environment, then run:

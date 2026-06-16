@@ -10,9 +10,9 @@ from typing import Callable
 import numpy as np
 
 from config import (
-    DEV_MATCHING_ROOT,
     MIXVPR_CHECKPOINT,
     VPR_BATCH_SIZE,
+    VPR_BACKEND_DIR,
     VPR_CACHE_DIR,
     VPR_FILTER_ENABLED,
     VPR_INITIAL_SEARCH_SIZE,
@@ -21,7 +21,7 @@ from config import (
 )
 
 
-BACKEND_SRC = Path(DEV_MATCHING_ROOT).expanduser().resolve() / "src"
+BACKEND_SRC = Path(VPR_BACKEND_DIR).expanduser().resolve()
 if str(BACKEND_SRC) not in sys.path:
     sys.path.insert(0, str(BACKEND_SRC))
 
@@ -37,8 +37,8 @@ try:
     from dev_matching.utils.device import resolve_device
 except ImportError as exc:
     raise RuntimeError(
-        f"Cannot import the VPR backend from {BACKEND_SRC}. "
-        "Keep Dev_Matching_V2 next to Robot_Visual_Navigation_V3 or set DEV_MATCHING_ROOT."
+        f"Cannot import the embedded VPR backend from {BACKEND_SRC}. "
+        "The Robot_Visual_Navigation_V3/vpr_backend folder is missing or incomplete."
     ) from exc
 
 
