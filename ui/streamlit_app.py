@@ -16,14 +16,11 @@ BASE_DIR = os.path.dirname(
 sys.path.append(BASE_DIR)
 
 from config import *
-from core.route_planner import RoutePlanner
-from core.streetview_client import StreetViewClient
-from core.frame_extractor import FrameExtractor
 from core.gps_utils import same_point
-from core.replay_localizer import ReplayLocalizer
-from matching.vpr_matcher import SUPPORTED_MODES, VPRMatcher
 
 from replay.replay_matcher import ReplayMatcher
+
+SUPPORTED_MODES = ("MixVPR", "Lightweight VPR", "Hybrid VPR")
 
 
 # =========================================================
@@ -349,14 +346,14 @@ def draw_navigation_map():
             width=1200,
             height=650,
             returned_objects=["last_clicked"],
-            key="navigation_map",
+            key=f"navigation_map_{st.session_state.selection_mode}_{st.session_state.map_version}",
         )
     except TypeError:
         map_data = st_folium(
             m,
             width=1200,
             height=650,
-            key="navigation_map",
+            key=f"navigation_map_{st.session_state.selection_mode}_{st.session_state.map_version}",
         )
 
     return map_data
@@ -369,6 +366,8 @@ def run_matching(
     top_k=5,
     progress_callback=None,
 ):
+    from matching.vpr_matcher import VPRMatcher
+
     matcher = VPRMatcher(
         database_dir=database_dir,
         metadata_file=METADATA_FILE,
@@ -514,6 +513,7 @@ defaults = {
     "replay_positions": [],
     "replay_results": [],
     "current_query_image": None,
+    "map_version": 0,
 }
 
 for key, value in defaults.items():
@@ -532,14 +532,16 @@ selection_mode = st.sidebar.radio(
     [
         "Map selection",
         "GPS coordinates"
-    ]
+    ],
+    key="selection_mode",
 )
 
 step_m = st.sidebar.number_input(
     "Route sampling step (m)",
     min_value=1,
     max_value=20,
-    value=int(STEP_M)
+    value=int(STEP_M),
+    key="step_m",
 )
 
 network_type = st.sidebar.selectbox(
@@ -550,7 +552,8 @@ network_type = st.sidebar.selectbox(
         "bike",
         "all"
     ],
-    index=0
+    index=0,
+    key="network_type",
 )
 
 heading_mode = st.sidebar.selectbox(
@@ -559,13 +562,15 @@ heading_mode = st.sidebar.selectbox(
         "route",
         "north"
     ],
-    index=0
+    index=0,
+    key="heading_mode",
 )
 
 matching_mode_global = st.sidebar.selectbox(
     "Default matching mode",
     list(SUPPORTED_MODES),
-    index=0
+    index=0,
+    key="matching_mode_global",
 )
 
 st.sidebar.caption(
@@ -631,31 +636,38 @@ with tab_route:
             "Manual GPS input"
         )
 
-        c1, c2, c3, c4 = st.columns(4)
+        with st.form("manual_gps_form"):
+            c1, c2, c3, c4 = st.columns(4)
 
-        with c1:
-            start_lat = st.text_input(
-                "Start latitude"
+            with c1:
+                start_lat = st.text_input(
+                    "Start latitude",
+                    key="manual_start_lat",
+                )
+
+            with c2:
+                start_lon = st.text_input(
+                    "Start longitude",
+                    key="manual_start_lon",
+                )
+
+            with c3:
+                end_lat = st.text_input(
+                    "End latitude",
+                    key="manual_end_lat",
+                )
+
+            with c4:
+                end_lon = st.text_input(
+                    "End longitude",
+                    key="manual_end_lon",
+                )
+
+            validate_manual_gps = st.form_submit_button(
+                "Validate GPS coordinates"
             )
 
-        with c2:
-            start_lon = st.text_input(
-                "Start longitude"
-            )
-
-        with c3:
-            end_lat = st.text_input(
-                "End latitude"
-            )
-
-        with c4:
-            end_lon = st.text_input(
-                "End longitude"
-            )
-
-        if st.button(
-            "Validate GPS coordinates"
-        ):
+        if validate_manual_gps:
             try:
 
                 start = normalize_gps_point([start_lat, start_lon])
@@ -683,6 +695,7 @@ with tab_route:
                     )
 
                     st.session_state.route = None
+                    st.session_state.map_version += 1
 
                     safe_rerun()
 
@@ -733,6 +746,7 @@ with tab_route:
                     )
 
                     st.session_state.route = None
+                    st.session_state.map_version += 1
 
                     safe_rerun()
 
@@ -748,6 +762,7 @@ with tab_route:
                     )
 
                     st.session_state.route = None
+                    st.session_state.map_version += 1
 
                     safe_rerun()
 
@@ -779,6 +794,7 @@ with tab_route:
                         )
 
                         st.session_state.route = None
+                        st.session_state.map_version += 1
 
                         safe_rerun()
 
@@ -822,13 +838,15 @@ with tab_route:
                     "Computing route..."
                 ):
 
-                    planner = RoutePlanner(
-                        points=ordered_points,
-                        network_type=network_type,
-                        step_m=step_m,
-                    )
-
                     try:
+                        from core.route_planner import RoutePlanner
+
+                        planner = RoutePlanner(
+                            points=ordered_points,
+                            network_type=network_type,
+                            step_m=step_m,
+                        )
+
                         route = (
                             planner.compute_route()
                         )
@@ -841,6 +859,7 @@ with tab_route:
                         st.session_state.route = (
                             route
                         )
+                        st.session_state.map_version += 1
 
                     except Exception as exc:
                         st.error(
@@ -867,6 +886,7 @@ with tab_route:
                 st.session_state.waypoints.pop()
 
                 st.session_state.route = None
+                st.session_state.map_version += 1
 
                 safe_rerun()
 
@@ -892,6 +912,7 @@ with tab_route:
             st.session_state.replay_positions = []
 
             st.session_state.last_clicked_point = None
+            st.session_state.map_version += 1
 
             safe_rerun()
 
@@ -989,17 +1010,19 @@ with tab_streetview:
                 "Downloading Street View images..."
             ):
 
-                client = StreetViewClient(
-                    api_key=API_KEY,
-                    image_size=IMAGE_SIZE,
-                    fov=FOV,
-                    pitch=PITCH,
-                    radius=RADIUS,
-                    max_distance_to_pano=MAX_DISTANCE_TO_PANO,
-                    heading_mode=heading_mode,
-                )
-
                 try:
+                    from core.streetview_client import StreetViewClient
+
+                    client = StreetViewClient(
+                        api_key=API_KEY,
+                        image_size=IMAGE_SIZE,
+                        fov=FOV,
+                        pitch=PITCH,
+                        radius=RADIUS,
+                        max_distance_to_pano=MAX_DISTANCE_TO_PANO,
+                        heading_mode=heading_mode,
+                    )
+
                     result = (
                         client.acquire_from_route(
                             route=st.session_state.route,
@@ -1203,12 +1226,6 @@ with tab_replay:
 
             status = st.empty()
 
-            extractor = FrameExtractor(
-                video_path=video_path,
-                output_dir=FRAMES_DIR,
-                fps=extraction_fps,
-            )
-
             def frame_progress(
                 current,
                 total,
@@ -1226,6 +1243,14 @@ with tab_replay:
                 )
 
             try:
+                from core.frame_extractor import FrameExtractor
+
+                extractor = FrameExtractor(
+                    video_path=video_path,
+                    output_dir=FRAMES_DIR,
+                    fps=extraction_fps,
+                )
+
                 result = extractor.extract_frames(
                     progress_callback=frame_progress
                 )
@@ -1265,20 +1290,30 @@ with tab_replay:
 
             st.session_state.replay_positions = []
 
-            localizer = ReplayLocalizer(
-                database_dir=STREETVIEW_IMAGES_DIR,
-                metadata_file=METADATA_FILE,
-                matching_mode=replay_matching_mode,
-                top_k=5,
-                min_score=35,
-            )
+            try:
+                from core.replay_localizer import ReplayLocalizer
 
-            summary = localizer.database_summary
-            st.info(
-                f"ROSA retained {summary['references_after_filtering']}/"
-                f"{summary['references_before_filtering']} Street View images. "
-                f"Device: {summary['device']}."
-            )
+                localizer = ReplayLocalizer(
+                    database_dir=STREETVIEW_IMAGES_DIR,
+                    metadata_file=METADATA_FILE,
+                    matching_mode=replay_matching_mode,
+                    top_k=5,
+                    min_score=35,
+                )
+
+                summary = localizer.database_summary
+                st.info(
+                    f"ROSA retained {summary['references_after_filtering']}/"
+                    f"{summary['references_before_filtering']} Street View images. "
+                    f"Device: {summary['device']}."
+                )
+            except Exception as exc:
+                st.error(
+                    "Replay localizer could not start. Check the VPR backend "
+                    "and Python dependencies."
+                )
+                st.exception(exc)
+                localizer = None
 
             def replay_progress(
                 current,
@@ -1299,6 +1334,8 @@ with tab_replay:
                 )
 
             try:
+                if localizer is None:
+                    raise RuntimeError("Replay localizer is not available")
                 replay_results = localizer.localize_frames(
                     frames_dir=FRAMES_DIR,
                     progress_callback=replay_progress,

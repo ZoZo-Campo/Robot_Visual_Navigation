@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from config import VPR_OUTPUT_DIR
-from matching.vpr_matcher import VPRMatcher
 
 
 class ReplayLocalizer:
@@ -19,6 +18,8 @@ class ReplayLocalizer:
         output_dir=VPR_OUTPUT_DIR,
         **_,
     ):
+        from matching.vpr_matcher import VPRMatcher
+
         self.top_k = top_k
         self.min_score = min_score
         self.output_dir = Path(output_dir)
