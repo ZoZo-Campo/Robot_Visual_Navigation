@@ -215,37 +215,84 @@ def get_video_files(directory):
 
 
 def get_map_center():
-    if (
-        st.session_state.start_point is not None
-        and st.session_state.end_point is not None
-    ):
+    start = normalize_gps_point(st.session_state.start_point)
+    end = normalize_gps_point(st.session_state.end_point)
+
+    if start is not None and end is not None:
         return [
-            (
-                st.session_state.start_point[0]
-                + st.session_state.end_point[0]
-            ) / 2,
-            (
-                st.session_state.start_point[1]
-                + st.session_state.end_point[1]
-            ) / 2,
+            (start[0] + end[0]) / 2,
+            (start[1] + end[1]) / 2,
         ]
 
-    if st.session_state.start_point is not None:
-        return st.session_state.start_point
+    if start is not None:
+        return start
 
-    if st.session_state.end_point is not None:
-        return st.session_state.end_point
+    if end is not None:
+        return end
 
     return DEFAULT_MAP_CENTER
+
+
+def normalize_gps_point(point):
+    if point is None:
+        return None
+    try:
+        lat = float(point[0])
+        lon = float(point[1])
+    except (TypeError, ValueError, IndexError):
+        return None
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return None
+    return [lat, lon]
+
+
+def safe_rerun():
+    if hasattr(st, "rerun"):
+        st.rerun()
+    if hasattr(st, "experimental_rerun"):
+        st.experimental_rerun()
+
+
+def show_image(image, **kwargs):
+    try:
+        st.image(image, **kwargs)
+    except TypeError:
+        if "use_container_width" in kwargs:
+            kwargs["use_column_width"] = kwargs.pop("use_container_width")
+        st.image(image, **kwargs)
+
+
+def show_dataframe(data, **kwargs):
+    try:
+        st.dataframe(data, **kwargs)
+    except TypeError:
+        kwargs.pop("hide_index", None)
+        st.dataframe(data, **kwargs)
+
+
+def clicked_point_from_map(map_data):
+    if not isinstance(map_data, dict):
+        return None
+    clicked = map_data.get("last_clicked")
+    if not isinstance(clicked, dict):
+        return None
+    return normalize_gps_point([clicked.get("lat"), clicked.get("lng")])
+
+
 def draw_navigation_map():
     m = folium.Map(
         location=get_map_center(),
         zoom_start=DEFAULT_ZOOM_LEVEL
     )
 
-    if st.session_state.route is not None:
+    route = [
+        point
+        for point in (st.session_state.route or [])
+        if normalize_gps_point(point) is not None
+    ]
+    if route:
         folium.PolyLine(
-            st.session_state.route,
+            route,
             color="blue",
             weight=5,
             opacity=0.9,
@@ -261,9 +308,10 @@ def draw_navigation_map():
             popup="Estimated replay trajectory",
         ).add_to(m)
 
-    if st.session_state.start_point is not None:
+    start = normalize_gps_point(st.session_state.start_point)
+    if start is not None:
         folium.Marker(
-            st.session_state.start_point,
+            start,
             popup="Start",
             icon=folium.Icon(color="green"),
         ).add_to(m)
@@ -271,32 +319,45 @@ def draw_navigation_map():
     for i, waypoint in enumerate(
         st.session_state.waypoints
     ):
-        folium.Marker(
-            waypoint,
-            popup=f"Waypoint {i + 1}",
-            icon=folium.Icon(color="orange"),
-        ).add_to(m)
+        point = normalize_gps_point(waypoint)
+        if point is not None:
+            folium.Marker(
+                point,
+                popup=f"Waypoint {i + 1}",
+                icon=folium.Icon(color="orange"),
+            ).add_to(m)
 
-    if st.session_state.end_point is not None:
+    end = normalize_gps_point(st.session_state.end_point)
+    if end is not None:
         folium.Marker(
-            st.session_state.end_point,
+            end,
             popup="End",
             icon=folium.Icon(color="red"),
         ).add_to(m)
 
-    if st.session_state.estimated_position is not None:
+    estimated = normalize_gps_point(st.session_state.estimated_position)
+    if estimated is not None:
         folium.Marker(
-            st.session_state.estimated_position,
+            estimated,
             popup="Estimated position",
             icon=folium.Icon(color="purple"),
         ).add_to(m)
 
-    map_data = st_folium(
-        m,
-        width=1200,
-        height=650,
-        returned_objects=["last_clicked"]
-    )
+    try:
+        map_data = st_folium(
+            m,
+            width=1200,
+            height=650,
+            returned_objects=["last_clicked"],
+            key="navigation_map",
+        )
+    except TypeError:
+        map_data = st_folium(
+            m,
+            width=1200,
+            height=650,
+            key="navigation_map",
+        )
 
     return map_data
 
@@ -380,7 +441,7 @@ def display_top_results(
         st.subheader("Query image")
 
         if st.session_state.current_query_image is not None:
-            st.image(
+            show_image(
                 st.session_state.current_query_image,
                 width=450
             )
@@ -394,7 +455,7 @@ def display_top_results(
         )
 
         if os.path.exists(best_path):
-            st.image(
+            show_image(
                 best_path,
                 width=450,
                 caption=best["filename"]
@@ -597,15 +658,11 @@ with tab_route:
         ):
             try:
 
-                start = [
-                    float(start_lat),
-                    float(start_lon)
-                ]
+                start = normalize_gps_point([start_lat, start_lon])
+                end = normalize_gps_point([end_lat, end_lon])
 
-                end = [
-                    float(end_lat),
-                    float(end_lon)
-                ]
+                if start is None or end is None:
+                    raise ValueError
 
                 if same_point(
                     start,
@@ -627,7 +684,7 @@ with tab_route:
 
                     st.session_state.route = None
 
-                    st.rerun()
+                    safe_rerun()
 
             except ValueError:
 
@@ -647,19 +704,10 @@ with tab_route:
 
     if selection_mode == "Map selection":
 
-        clicked = None
-
-        if map_data is not None:
-            clicked = map_data.get(
-                "last_clicked"
-            )
+        clicked = clicked_point_from_map(map_data)
 
         if clicked is not None:
-
-            st.session_state.last_clicked_point = [
-                clicked["lat"],
-                clicked["lng"]
-            ]
+            st.session_state.last_clicked_point = clicked
 
         if (
             st.session_state.last_clicked_point
@@ -681,12 +729,12 @@ with tab_route:
                 ):
 
                     st.session_state.start_point = (
-                        st.session_state.last_clicked_point
+                        normalize_gps_point(st.session_state.last_clicked_point)
                     )
 
                     st.session_state.route = None
 
-                    st.rerun()
+                    safe_rerun()
 
             with c2:
 
@@ -696,12 +744,12 @@ with tab_route:
                 ):
 
                     st.session_state.waypoints.append(
-                        st.session_state.last_clicked_point
+                        normalize_gps_point(st.session_state.last_clicked_point)
                     )
 
                     st.session_state.route = None
 
-                    st.rerun()
+                    safe_rerun()
 
             with c3:
 
@@ -711,7 +759,7 @@ with tab_route:
                 ):
 
                     point = (
-                        st.session_state.last_clicked_point
+                        normalize_gps_point(st.session_state.last_clicked_point)
                     )
 
                     if same_point(
@@ -732,7 +780,7 @@ with tab_route:
 
                         st.session_state.route = None
 
-                        st.rerun()
+                        safe_rerun()
 
     st.divider()
 
@@ -780,20 +828,28 @@ with tab_route:
                         step_m=step_m,
                     )
 
-                    route = (
-                        planner.compute_route()
-                    )
+                    try:
+                        route = (
+                            planner.compute_route()
+                        )
 
-                    save_route_file(
-                        route,
-                        GPS_ROUTE_FILE
-                    )
+                        save_route_file(
+                            route,
+                            GPS_ROUTE_FILE
+                        )
 
-                    st.session_state.route = (
-                        route
-                    )
+                        st.session_state.route = (
+                            route
+                        )
 
-                st.rerun()
+                    except Exception as exc:
+                        st.error(
+                            "Route computation failed. Check the GPS points "
+                            "and the OSM network type."
+                        )
+                        st.exception(exc)
+                    else:
+                        safe_rerun()
 
     # =====================================================
     # REMOVE WAYPOINT
@@ -812,7 +868,7 @@ with tab_route:
 
                 st.session_state.route = None
 
-                st.rerun()
+                safe_rerun()
 
     # =====================================================
     # CLEAR
@@ -837,7 +893,7 @@ with tab_route:
 
             st.session_state.last_clicked_point = None
 
-            st.rerun()
+            safe_rerun()
 
     if st.session_state.route is not None:
 
@@ -943,20 +999,29 @@ with tab_streetview:
                     heading_mode=heading_mode,
                 )
 
-                result = (
-                    client.acquire_from_route(
-                        route=st.session_state.route,
-                        output_dir=STREETVIEW_IMAGES_DIR,
-                        metadata_file=METADATA_FILE,
-                        progress_callback=update_progress,
+                try:
+                    result = (
+                        client.acquire_from_route(
+                            route=st.session_state.route,
+                            output_dir=STREETVIEW_IMAGES_DIR,
+                            metadata_file=METADATA_FILE,
+                            progress_callback=update_progress,
+                        )
                     )
-                )
+                except Exception as exc:
+                    st.error(
+                        "Street View acquisition failed. Check the API key, "
+                        "network connection and selected route."
+                    )
+                    st.exception(exc)
+                    result = None
 
-            st.success(
-                f"Street View acquisition completed: "
-                f"{result['downloaded']} downloaded, "
-                f"{result['skipped']} skipped."
-            )
+            if result is not None:
+                st.success(
+                    f"Street View acquisition completed: "
+                    f"{result['downloaded']} downloaded, "
+                    f"{result['skipped']} skipped."
+                )
 
     image_files = get_image_files(
         STREETVIEW_IMAGES_DIR
@@ -976,7 +1041,7 @@ with tab_streetview:
 
             with cols[i % 4]:
 
-                st.image(
+                show_image(
                     os.path.join(
                         STREETVIEW_IMAGES_DIR,
                         filename
@@ -1030,7 +1095,7 @@ with tab_single_match:
         is not None
     ):
 
-        st.image(
+        show_image(
             st.session_state.current_query_image,
             width=500
         )
@@ -1065,17 +1130,26 @@ with tab_single_match:
                 "Running matching..."
             ):
 
-                results = run_matching(
-                    image_path=st.session_state.current_query_image,
-                    mode=matching_mode,
-                    database_dir=STREETVIEW_IMAGES_DIR,
-                    top_k=5,
-                )
+                try:
+                    results = run_matching(
+                        image_path=st.session_state.current_query_image,
+                        mode=matching_mode,
+                        database_dir=STREETVIEW_IMAGES_DIR,
+                        top_k=5,
+                    )
+                except Exception as exc:
+                    st.error(
+                        "Localization failed. Check that the Street View "
+                        "database and MixVPR checkpoint are available."
+                    )
+                    st.exception(exc)
+                    results = []
 
-            display_top_results(
-                results,
-                metadata
-            )
+            if results:
+                display_top_results(
+                    results,
+                    metadata
+                )
 
 
 # =========================================================
@@ -1151,13 +1225,17 @@ with tab_replay:
                     f"Saved: {saved}"
                 )
 
-            result = extractor.extract_frames(
-                progress_callback=frame_progress
-            )
-
-            st.success(
-                f"{result['saved_frames']} frames extracted."
-            )
+            try:
+                result = extractor.extract_frames(
+                    progress_callback=frame_progress
+                )
+            except Exception as exc:
+                st.error("Frame extraction failed.")
+                st.exception(exc)
+            else:
+                st.success(
+                    f"{result['saved_frames']} frames extracted."
+                )
 
     frame_files = get_image_files(
         FRAMES_DIR
@@ -1220,10 +1298,18 @@ with tab_replay:
                     f"{filename}"
                 )
 
-            replay_results = localizer.localize_frames(
-                frames_dir=FRAMES_DIR,
-                progress_callback=replay_progress,
-            )
+            try:
+                replay_results = localizer.localize_frames(
+                    frames_dir=FRAMES_DIR,
+                    progress_callback=replay_progress,
+                )
+            except Exception as exc:
+                st.error(
+                    "Replay localization failed. Check the Street View "
+                    "database, metadata and VPR backend."
+                )
+                st.exception(exc)
+                replay_results = []
             st.session_state.replay_results = replay_results
 
             for result in replay_results:
@@ -1257,7 +1343,7 @@ with tab_replay:
 
     if st.session_state.replay_results:
         st.subheader("Robot frame to Street View matches")
-        st.dataframe(
+        show_dataframe(
             st.session_state.replay_results,
             use_container_width=True,
             hide_index=True,
@@ -1274,9 +1360,9 @@ with tab_replay:
         streetview_path = os.path.join(STREETVIEW_IMAGES_DIR, selected_match["best_match"])
         left, right = st.columns(2)
         with left:
-            st.image(frame_path, caption=f"Robot: {selected_match['frame']}", width=500)
+            show_image(frame_path, caption=f"Robot: {selected_match['frame']}", width=500)
         with right:
-            st.image(
+            show_image(
                 streetview_path,
                 caption=(
                     f"Street View: {selected_match['best_match']} | "
