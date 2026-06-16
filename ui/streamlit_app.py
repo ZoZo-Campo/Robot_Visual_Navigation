@@ -508,6 +508,7 @@ defaults = {
     "end_point": None,
     "waypoints": [],
     "route": None,
+    "route_status": None,
     "last_clicked_point": None,
     "estimated_position": None,
     "replay_positions": [],
@@ -695,6 +696,7 @@ with tab_route:
                     )
 
                     st.session_state.route = None
+                    st.session_state.route_status = None
                     st.session_state.map_version += 1
 
                     safe_rerun()
@@ -746,6 +748,7 @@ with tab_route:
                     )
 
                     st.session_state.route = None
+                    st.session_state.route_status = None
                     st.session_state.map_version += 1
 
                     safe_rerun()
@@ -762,6 +765,7 @@ with tab_route:
                     )
 
                     st.session_state.route = None
+                    st.session_state.route_status = None
                     st.session_state.map_version += 1
 
                     safe_rerun()
@@ -794,6 +798,7 @@ with tab_route:
                         )
 
                         st.session_state.route = None
+                        st.session_state.route_status = None
                         st.session_state.map_version += 1
 
                         safe_rerun()
@@ -859,6 +864,11 @@ with tab_route:
                         st.session_state.route = (
                             route
                         )
+                        st.session_state.route_status = {
+                            "message": planner.last_message,
+                            "used_fallback": planner.used_fallback,
+                            "cache_hit": planner.cache_hit,
+                        }
                         st.session_state.map_version += 1
 
                     except Exception as exc:
@@ -886,6 +896,7 @@ with tab_route:
                 st.session_state.waypoints.pop()
 
                 st.session_state.route = None
+                st.session_state.route_status = None
                 st.session_state.map_version += 1
 
                 safe_rerun()
@@ -908,6 +919,7 @@ with tab_route:
             st.session_state.waypoints = []
 
             st.session_state.route = None
+            st.session_state.route_status = None
 
             st.session_state.replay_positions = []
 
@@ -922,6 +934,17 @@ with tab_route:
             f"Route created with "
             f"{len(st.session_state.route)} GPS points."
         )
+        route_status = st.session_state.route_status or {}
+        if route_status.get("used_fallback"):
+            st.warning(
+                "OSM route was not available, so the app used a direct "
+                "interpolated GPS route. Street View download can still work, "
+                "but the path is less road-accurate."
+            )
+        elif route_status.get("cache_hit"):
+            st.info(route_status.get("message", "Loaded route graph from cache."))
+        elif route_status.get("message"):
+            st.info(route_status["message"])
 
 
 # =========================================================

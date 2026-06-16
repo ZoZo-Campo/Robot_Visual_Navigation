@@ -1,4 +1,12 @@
 # =========================================================
+# PROJECT
+# =========================================================
+
+import os
+
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# =========================================================
 # GOOGLE API
 # =========================================================
 
@@ -21,6 +29,10 @@ DEFAULT_ZOOM = 16
 
 STEP_M = 5
 NETWORK_TYPE = "walk"
+ROUTE_CACHE_DIR = os.path.join(PROJECT_DIR, "cache", "routes")
+ROUTE_DOWNLOAD_TIMEOUT_S = 60
+ROUTE_MAX_RADIUS_M = 2500
+ROUTE_USE_FALLBACK_DIRECT = True
 
 # =========================================================
 # STREET VIEW
@@ -68,10 +80,6 @@ REPLAY_SEARCH_WINDOW = 5
 # =========================================================
 # VPR BACKEND (embedded in this V3 folder)
 # =========================================================
-
-import os
-
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 VPR_BACKEND_DIR = os.path.join(PROJECT_DIR, "vpr_backend")
 MIXVPR_CHECKPOINT = os.environ.get(
     "MIXVPR_CHECKPOINT",
