@@ -51,7 +51,7 @@ class MixVPRMatcher(BaseMatcher):
         try:
             import torch
         except ImportError as exc:
-            raise RuntimeError("MixVPR requires: pip install -e '.[torch]'") from exc
+            raise RuntimeError("MixVPR requires torch and torchvision; run scripts/setup_mac.sh") from exc
 
         model = _build_official_model(torch)
         try:
@@ -88,7 +88,7 @@ class MixVPRMatcher(BaseMatcher):
             from PIL import Image
             from torchvision.transforms import v2
         except ImportError as exc:
-            raise RuntimeError("MixVPR requires: pip install -e '.[torch]'") from exc
+            raise RuntimeError("MixVPR requires torch and torchvision; run scripts/setup_mac.sh") from exc
 
         model = self._load_model()
         transform = v2.Compose(

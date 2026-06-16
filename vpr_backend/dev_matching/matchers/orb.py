@@ -18,7 +18,7 @@ class ORBMatcher(BaseMatcher):
         try:
             import cv2
         except ImportError as exc:
-            raise RuntimeError("ORB requires the 'vision' extra: pip install -e '.[vision]'") from exc
+            raise RuntimeError("ORB requires opencv-python; run scripts/setup_mac.sh") from exc
         nfeatures = int(self.params.get("nfeatures", 1000))
         orb = cv2.ORB_create(nfeatures=nfeatures)
         rows = []

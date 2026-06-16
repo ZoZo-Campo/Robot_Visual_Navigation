@@ -9,7 +9,7 @@ def _pyplot():
     try:
         import matplotlib.pyplot as plt
     except ImportError as exc:
-        raise RuntimeError("Plotting requires: pip install -e '.[viz]'") from exc
+        raise RuntimeError("Plotting requires matplotlib; run scripts/setup_mac.sh") from exc
     return plt
 
 

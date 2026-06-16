@@ -20,12 +20,13 @@ The original `Robot_Visual_Navigation_V2` project is not modified.
 
 ## macOS setup
 
-The V3 folder is self-contained. It embeds the VPR backend in:
+The V3 folder is self-contained. It embeds the VPR backend and the local
+MixVPR checkpoint in:
 
 ```text
 Robot_Visual_Navigation_V3/
   vpr_backend/
-  weights/
+  weights/resnet50_MixVPR_4096.ckpt
 ```
 
 Activate the existing Python environment, then run:

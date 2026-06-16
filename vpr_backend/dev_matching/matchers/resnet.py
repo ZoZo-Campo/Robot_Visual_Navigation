@@ -17,7 +17,7 @@ class ResNet18Matcher(BaseMatcher):
             from PIL import Image
             from torchvision.models import ResNet18_Weights, resnet18
         except ImportError as exc:
-            raise RuntimeError("ResNet18 requires the 'torch' extra: pip install -e '.[torch]'") from exc
+            raise RuntimeError("ResNet18 requires torch and torchvision; run scripts/setup_mac.sh") from exc
         weights = ResNet18_Weights.DEFAULT
         model = resnet18(weights=weights)
         model.fc = torch.nn.Identity()
