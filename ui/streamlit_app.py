@@ -1053,6 +1053,7 @@ defaults = {
     "waypoints": [],
     "route": None,
     "route_status": None,
+    "historical_download_result": None,
     "last_clicked_point": None,
     "estimated_position": None,
     "replay_positions": [],
@@ -1729,6 +1730,121 @@ with tab_streetview:
                     f"{result['downloaded']} downloaded, "
                     f"{result['skipped']} skipped."
                 )
+
+    st.subheader("Historical Street View from current CSV")
+    st.caption(
+        "This part is dynamic: it uses data/streetview/metadata.csv generated "
+        "by the current route download, searches older panoramas for those same "
+        "GPS points, then rebuilds the historical archive by date."
+    )
+
+    if st.session_state.historical_download_result is not None:
+        last_result = st.session_state.historical_download_result
+        st.success(
+            "Last historical acquisition: "
+            f"{last_result['downloaded']} images downloaded, "
+            f"{last_result['skipped']} skipped, "
+            f"{len(last_result['dates'])} dates."
+        )
+
+    if not os.path.exists(METADATA_FILE):
+        st.warning(
+            "No current Street View metadata CSV found yet. "
+            "Download the current Street View database first."
+        )
+    else:
+        st.info(
+            "Source CSV: data/streetview/metadata.csv. "
+            "The previous historical archive will be replaced by the archive "
+            "for this CSV."
+        )
+
+        hist_col1, hist_col2, hist_col3 = st.columns(3)
+        with hist_col1:
+            historical_candidate_limit = st.number_input(
+                "Historical candidates per route point",
+                min_value=1,
+                max_value=10,
+                value=int(HISTORICAL_CANDIDATE_LIMIT),
+                key="historical_candidate_limit",
+            )
+        with hist_col2:
+            historical_before_date = st.text_input(
+                "Keep dates before",
+                value=HISTORICAL_BEFORE_DATE,
+                key="historical_before_date",
+            )
+        with hist_col3:
+            historical_after_date = st.text_input(
+                "Keep dates after",
+                value=HISTORICAL_AFTER_DATE or "",
+                key="historical_after_date",
+            )
+
+        if st.button(
+            "Download historical Street View for current CSV",
+            width="stretch",
+        ):
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            stats_text = st.empty()
+            start_time = time.time()
+
+            def update_historical_progress(
+                phase,
+                current,
+                total,
+                downloaded,
+                skipped,
+                message,
+            ):
+                progress = current / total if total else 0
+                progress_bar.progress(progress)
+                elapsed = time.time() - start_time
+                status_text.write(f"{phase}: {message}")
+                stats_text.write(
+                    f"Progress: {current}/{total} | "
+                    f"Downloaded: {downloaded} | "
+                    f"Skipped: {skipped} | "
+                    f"Elapsed: {elapsed:.1f}s"
+                )
+
+            with st.spinner(
+                "Searching and downloading historical Street View images..."
+            ):
+                try:
+                    from core.historical_streetview_client import (
+                        HistoricalStreetViewClient,
+                    )
+
+                    historical_client = HistoricalStreetViewClient(
+                        api_key=API_KEY,
+                        image_size=HISTORICAL_IMAGE_SIZE,
+                        fov=HISTORICAL_FOV,
+                        pitch=HISTORICAL_PITCH,
+                        before=historical_before_date or None,
+                        after=historical_after_date or None,
+                        candidate_limit=int(historical_candidate_limit),
+                        sleep_s=HISTORICAL_DOWNLOAD_SLEEP_S,
+                    )
+                    historical_result = (
+                        historical_client.acquire_from_current_metadata(
+                            current_metadata_file=METADATA_FILE,
+                            output_dir=HISTORICAL_DATASET_DIR,
+                            progress_callback=update_historical_progress,
+                        )
+                    )
+                except Exception as exc:
+                    st.error(
+                        "Historical Street View acquisition failed. "
+                        "Check the API key, network connection and current CSV."
+                    )
+                    st.exception(exc)
+                    historical_result = None
+
+            if historical_result is not None:
+                st.session_state.historical_download_result = historical_result
+                safe_rerun()
 
     image_files = get_image_files(
         active_database_dir

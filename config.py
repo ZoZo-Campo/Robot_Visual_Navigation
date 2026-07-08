@@ -50,6 +50,18 @@ MAX_DISTANCE_TO_PANO = 8
 HEADING_MODE = "route"
 
 # =========================================================
+# HISTORICAL STREET VIEW
+# =========================================================
+
+HISTORICAL_IMAGE_SIZE = "640x640"
+HISTORICAL_FOV = 100
+HISTORICAL_PITCH = 0
+HISTORICAL_BEFORE_DATE = "2015-01"
+HISTORICAL_AFTER_DATE = None
+HISTORICAL_CANDIDATE_LIMIT = 3
+HISTORICAL_DOWNLOAD_SLEEP_S = 0.2
+
+# =========================================================
 # ORB MATCHING
 # =========================================================
 

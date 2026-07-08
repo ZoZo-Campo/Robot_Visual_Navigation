@@ -16,33 +16,38 @@ Street View references are filtered with ROSA before matching. Video replay
 uses the first five references for initialization, then searches only the five
 forward references around the previous localization, with a 30 metre limit.
 
-## Historical Street View database
+## Dynamic historical Street View database
 
-The sidebar can now switch the active localization database between:
+The historical database is generated from the current route CSV. The intended
+workflow is:
+
+1. Create a route in the interface.
+2. Download the current Street View database.
+3. The app writes `data/streetview/metadata.csv`.
+4. Click `Download historical Street View for current CSV`.
+5. The app searches older panoramas for the same GPS points and rebuilds
+   `data/streetview_historical/mixvpr_dataset_by_date/`.
+
+The sidebar can then switch the active localization database between:
 
 - `Current Street View`: the normal images downloaded from the route.
-- `Historical Street View`: the historical MixVPR test dataset copied into
-  `data/streetview_historical/mixvpr_dataset_by_date/`.
+- `Historical Street View`: the historical dataset generated from the current
+  `data/streetview/metadata.csv`.
 
 When `Historical Street View` is selected, the interface displays the available
 dates and the number of images for each date. The selected date becomes the
 active database for both single-image localization and replay localization.
 
 The Street View tab also includes a historical archive browser. It lets the
-user select a date, inspect the images in route order, open one image with its
-metadata, and quickly compare how the same route looked in the past.
-
-Available historical dates in the included dataset:
-
-```text
-2009-05: 42 images
-2009-06: 1 image
-2011-08: 43 images
-2014-05: 43 images
-```
+user select a generated date, inspect the images in route order, open one image
+with its metadata, and quickly compare how the same route looked in the past.
 
 The app automatically builds a compatible metadata CSV for the selected date,
 so MixVPR keeps GPS, heading, pano ID and candidate-rank information.
+
+Historical image folders and metadata CSV files are generated outputs. They are
+not committed to Git because each new route should rebuild them from its own
+CSV.
 
 The original `Robot_Visual_Navigation_V2` project is not modified.
 
