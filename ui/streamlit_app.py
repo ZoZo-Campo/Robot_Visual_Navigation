@@ -2,6 +2,7 @@ import os
 import sys
 import csv
 import time
+import base64
 
 import streamlit as st
 import folium
@@ -21,6 +22,61 @@ from core.gps_utils import same_point
 from replay.replay_matcher import ReplayMatcher
 
 SUPPORTED_MODES = ("MixVPR", "Lightweight VPR", "Hybrid VPR")
+
+APP_STYLE = """
+<style>
+    .block-container {
+        padding-top: 1.4rem;
+        padding-bottom: 2rem;
+    }
+    section[data-testid="stSidebar"] {
+        border-right: 1px solid rgba(49, 51, 63, 0.12);
+    }
+    div[data-testid="stMetric"] {
+        background: rgba(250, 250, 250, 0.92);
+        border: 1px solid rgba(49, 51, 63, 0.12);
+        border-radius: 14px;
+        padding: 0.9rem 1rem;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+    }
+    div[data-testid="stAlert"] {
+        border-radius: 12px;
+    }
+    .rvn-hero {
+        background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 58%, #0369a1 100%);
+        color: white;
+        padding: 1.15rem 1.35rem;
+        border-radius: 18px;
+        margin-bottom: 1rem;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+    }
+    .rvn-hero-content {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.4rem;
+    }
+    .rvn-hero-logo {
+        max-width: 190px;
+        min-width: 120px;
+        background: rgba(255, 255, 255, 0.96);
+        border-radius: 14px;
+        padding: 0.65rem;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.22);
+    }
+    .rvn-hero h1 {
+        margin: 0;
+        padding: 0;
+        font-size: 2rem;
+        line-height: 1.2;
+    }
+    .rvn-hero p {
+        margin: 0.45rem 0 0 0;
+        color: rgba(255, 255, 255, 0.86);
+        font-size: 1rem;
+    }
+</style>
+"""
 
 
 # =========================================================
@@ -47,6 +103,26 @@ STREETVIEW_IMAGES_DIR = os.path.join(
 METADATA_FILE = os.path.join(
     STREETVIEW_DIR,
     "metadata.csv"
+)
+
+HISTORICAL_STREETVIEW_DIR = os.path.join(
+    DATA_DIR,
+    "streetview_historical"
+)
+
+HISTORICAL_DATASET_DIR = os.path.join(
+    HISTORICAL_STREETVIEW_DIR,
+    "mixvpr_dataset_by_date"
+)
+
+HISTORICAL_FULL_METADATA_FILE = os.path.join(
+    HISTORICAL_DATASET_DIR,
+    "downloaded_static_metadata.csv"
+)
+
+HISTORICAL_ACTIVE_METADATA_FILE = os.path.join(
+    HISTORICAL_STREETVIEW_DIR,
+    "active_metadata.csv"
 )
 
 GPS_ROUTE_FILE = os.path.join(
@@ -91,9 +167,20 @@ LOGO_PATH = os.path.join(
     "logo-cvut.jpg"
 )
 
+ROOT_LOGO_SVG_PATH = os.path.join(
+    BASE_DIR,
+    "logo_CVUT_doplnkova_verze.svg"
+)
+
+LOGO_CANDIDATES = [
+    ROOT_LOGO_SVG_PATH,
+    LOGO_PATH,
+]
+
 for directory in [
     ROUTES_DIR,
     STREETVIEW_IMAGES_DIR,
+    HISTORICAL_STREETVIEW_DIR,
     ROBOT_PHOTOS_DIR,
     ROBOT_VIDEOS_DIR,
     FRAMES_DIR,
@@ -187,6 +274,18 @@ def load_metadata(metadata_file):
     return metadata
 
 
+def load_csv_rows(csv_file):
+    if not os.path.exists(csv_file):
+        return []
+
+    with open(
+        csv_file,
+        "r",
+        encoding="utf-8"
+    ) as f:
+        return list(csv.DictReader(f))
+
+
 def get_image_files(directory):
     if not os.path.exists(directory):
         return []
@@ -197,6 +296,210 @@ def get_image_files(directory):
             (".jpg", ".jpeg", ".png")
         )
     )
+
+
+def first_existing_file(paths):
+    for path in paths:
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def file_to_data_uri(path):
+    if path is None or not os.path.exists(path):
+        return None
+
+    extension = os.path.splitext(path)[1].lower()
+    mime_type = {
+        ".svg": "image/svg+xml",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+    }.get(extension)
+
+    if mime_type is None:
+        return None
+
+    with open(path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("ascii")
+
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def safe_int(value, default=0):
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def get_historical_date_stats():
+    rows = load_csv_rows(HISTORICAL_FULL_METADATA_FILE)
+    stats = {}
+
+    for row in rows:
+        date = row.get("historical_date") or "unknown"
+        image_path = row.get("static_image_path", "")
+        image_name = os.path.basename(image_path)
+        local_path = os.path.join(
+            HISTORICAL_DATASET_DIR,
+            date,
+            image_name,
+        )
+
+        if not image_name or not os.path.exists(local_path):
+            continue
+
+        if date not in stats:
+            stats[date] = {
+                "date": date,
+                "images": 0,
+                "route_points": set(),
+                "rank_0": 0,
+                "rank_1": 0,
+                "rank_2": 0,
+            }
+
+        stats[date]["images"] += 1
+        stats[date]["route_points"].add(row.get("source_index", ""))
+        rank_key = f"rank_{row.get('candidate_rank', '')}"
+        if rank_key in stats[date]:
+            stats[date][rank_key] += 1
+
+    result = []
+    for item in stats.values():
+        result.append(
+            {
+                "date": item["date"],
+                "images": item["images"],
+                "route_points": len(item["route_points"]),
+                "rank_0": item["rank_0"],
+                "rank_1": item["rank_1"],
+                "rank_2": item["rank_2"],
+            }
+        )
+
+    return sorted(
+        result,
+        key=lambda item: item["date"]
+    )
+
+
+def get_historical_rows_for_date(selected_date):
+    rows = []
+
+    for row in load_csv_rows(HISTORICAL_FULL_METADATA_FILE):
+        if row.get("historical_date") != selected_date:
+            continue
+
+        image_name = os.path.basename(
+            row.get("static_image_path", "")
+        )
+
+        if not image_name:
+            continue
+
+        local_path = os.path.join(
+            HISTORICAL_DATASET_DIR,
+            selected_date,
+            image_name,
+        )
+
+        if not os.path.exists(local_path):
+            continue
+
+        item = dict(row)
+        item["filename"] = image_name
+        item["local_path"] = local_path
+        rows.append(item)
+
+    return sorted(
+        rows,
+        key=lambda item: (
+            safe_int(item.get("source_index")),
+            safe_int(item.get("candidate_rank")),
+            item.get("filename", ""),
+        )
+    )
+
+
+def prepare_historical_metadata(selected_date):
+    rows = load_csv_rows(HISTORICAL_FULL_METADATA_FILE)
+    os.makedirs(
+        os.path.dirname(HISTORICAL_ACTIVE_METADATA_FILE),
+        exist_ok=True,
+    )
+
+    output_rows = []
+
+    for row in rows:
+        if row.get("historical_date") != selected_date:
+            continue
+
+        image_name = os.path.basename(
+            row.get("static_image_path", "")
+        )
+
+        if not image_name:
+            continue
+
+        local_image_path = os.path.join(
+            HISTORICAL_DATASET_DIR,
+            selected_date,
+            image_name,
+        )
+
+        if not os.path.exists(local_image_path):
+            continue
+
+        output_rows.append(
+            {
+                "index": row.get("source_index", ""),
+                "target_lat": row.get("source_lat", ""),
+                "target_lon": row.get("source_lon", ""),
+                "pano_id": row.get("historical_pano_id", ""),
+                "pano_lat": row.get("historical_lat", ""),
+                "pano_lon": row.get("historical_lon", ""),
+                "distance_to_pano_m": row.get("distance_to_source_m", ""),
+                "heading": row.get("static_heading") or row.get("heading", ""),
+                "image_file": local_image_path,
+                "filename": image_name,
+                "historical_date": row.get("historical_date", ""),
+                "candidate_rank": row.get("candidate_rank", ""),
+                "source_current_pano_id": row.get("source_current_pano_id", ""),
+            }
+        )
+
+    fieldnames = [
+        "index",
+        "target_lat",
+        "target_lon",
+        "pano_id",
+        "pano_lat",
+        "pano_lon",
+        "distance_to_pano_m",
+        "heading",
+        "image_file",
+        "filename",
+        "historical_date",
+        "candidate_rank",
+        "source_current_pano_id",
+    ]
+
+    with open(
+        HISTORICAL_ACTIVE_METADATA_FILE,
+        "w",
+        encoding="utf-8",
+        newline="",
+    ) as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=fieldnames,
+        )
+        writer.writeheader()
+        writer.writerows(output_rows)
+
+    return HISTORICAL_ACTIVE_METADATA_FILE, len(output_rows)
 
 
 def get_video_files(directory):
@@ -250,21 +553,72 @@ def safe_rerun():
         st.experimental_rerun()
 
 
+def normalize_width_kwargs(kwargs):
+    kwargs = dict(kwargs)
+    if "use_container_width" in kwargs:
+        use_stretch = kwargs.pop("use_container_width")
+        kwargs.setdefault("width", "stretch" if use_stretch else "content")
+    return kwargs
+
+
+def legacy_image_kwargs(kwargs):
+    kwargs = dict(kwargs)
+    width = kwargs.pop("width", None)
+    if width == "stretch":
+        kwargs["use_column_width"] = True
+    return kwargs
+
+
+def legacy_dataframe_kwargs(kwargs):
+    kwargs = dict(kwargs)
+    width = kwargs.pop("width", None)
+    if width == "stretch":
+        kwargs["use_container_width"] = True
+    kwargs.pop("hide_index", None)
+    return kwargs
+
+
 def show_image(image, **kwargs):
+    kwargs = normalize_width_kwargs(kwargs)
     try:
         st.image(image, **kwargs)
     except TypeError:
-        if "use_container_width" in kwargs:
-            kwargs["use_column_width"] = kwargs.pop("use_container_width")
-        st.image(image, **kwargs)
+        st.image(image, **legacy_image_kwargs(kwargs))
 
 
 def show_dataframe(data, **kwargs):
+    kwargs = normalize_width_kwargs(kwargs)
     try:
         st.dataframe(data, **kwargs)
     except TypeError:
-        kwargs.pop("hide_index", None)
-        st.dataframe(data, **kwargs)
+        st.dataframe(data, **legacy_dataframe_kwargs(kwargs))
+
+
+def render_app_dashboard(
+    active_database_label,
+    active_database_count,
+):
+    route_count = (
+        len(st.session_state.route)
+        if st.session_state.route is not None
+        else 0
+    )
+    frames_count = len(get_image_files(FRAMES_DIR))
+    replay_count = len(st.session_state.replay_results)
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+        st.metric("Active database", active_database_label)
+
+    with c2:
+        st.metric("Reference images", active_database_count)
+
+    with c3:
+        st.metric("Route points", route_count)
+
+    with c4:
+        st.metric("Replay frames", frames_count, delta=f"{replay_count} localized")
 
 
 def clicked_point_from_map(map_data):
@@ -363,6 +717,7 @@ def run_matching(
     image_path,
     mode,
     database_dir,
+    metadata_file,
     top_k=5,
     progress_callback=None,
 ):
@@ -370,7 +725,7 @@ def run_matching(
 
     matcher = VPRMatcher(
         database_dir=database_dir,
-        metadata_file=METADATA_FILE,
+        metadata_file=metadata_file,
         mode=mode,
     )
     return matcher.search(
@@ -388,6 +743,8 @@ def attach_gps_to_result(result, metadata):
     if meta is None:
         result["lat"] = None
         result["lon"] = None
+        result["historical_date"] = None
+        result["candidate_rank"] = None
         return result
 
     result["lat"] = float(
@@ -397,6 +754,8 @@ def attach_gps_to_result(result, metadata):
     result["lon"] = float(
         meta["target_lon"]
     )
+    result["historical_date"] = meta.get("historical_date")
+    result["candidate_rank"] = meta.get("candidate_rank")
 
     return result
 
@@ -404,6 +763,8 @@ def attach_gps_to_result(result, metadata):
 def display_top_results(
     results,
     metadata,
+    database_dir,
+    database_label,
 ):
     if not results:
         st.warning("No match found.")
@@ -414,13 +775,29 @@ def display_top_results(
         metadata
     )
 
+    m1, m2, m3, m4 = st.columns(4)
+
+    with m1:
+        st.metric("Best score", f"{best['score']:.2f}%")
+
+    with m2:
+        st.metric(
+            "ROSA retained",
+            f"{best['references_after_filtering']}/"
+            f"{best['references_before_filtering']}"
+        )
+
+    with m3:
+        st.metric("Database", database_label)
+
+    with m4:
+        st.metric(
+            "Historical date",
+            best.get("historical_date") or "current"
+        )
+
     st.success(
-        f"Best match: {best['filename']} — "
-        f"{best['score']:.2f}%"
-    )
-    st.caption(
-        f"ROSA references: {best['references_after_filtering']}/"
-        f"{best['references_before_filtering']} retained"
+        f"Best match: {best['filename']}"
     )
 
     if best["lat"] is not None:
@@ -449,7 +826,7 @@ def display_top_results(
         st.subheader("Best Street View match")
 
         best_path = os.path.join(
-            STREETVIEW_IMAGES_DIR,
+            database_dir,
             best["filename"]
         )
 
@@ -462,18 +839,162 @@ def display_top_results(
 
     st.subheader("Top results")
 
-    for result in results:
-        line = (
-            f"{result['filename']} → "
-            f"{result['score']:.2f}%"
+    rows = []
+    for rank, result in enumerate(results, start=1):
+        meta_result = attach_gps_to_result(
+            dict(result),
+            metadata,
+        )
+        rows.append(
+            {
+                "rank": rank,
+                "filename": meta_result["filename"],
+                "score": f"{meta_result['score']:.2f}%",
+                "mixvpr": (
+                    f"{meta_result['mixvpr_score']:.2f}%"
+                    if meta_result.get("mixvpr_score") is not None
+                    else ""
+                ),
+                "lightweight": (
+                    f"{meta_result['lightweight_score']:.2f}%"
+                    if meta_result.get("lightweight_score") is not None
+                    else ""
+                ),
+                "date": meta_result.get("historical_date") or "current",
+                "candidate_rank": meta_result.get("candidate_rank") or "",
+                "lat": meta_result.get("lat"),
+                "lon": meta_result.get("lon"),
+            }
         )
 
-        if result.get("mixvpr_score") is not None:
-            line += f" | MixVPR {result['mixvpr_score']:.2f}%"
-        if result.get("lightweight_score") is not None:
-            line += f" | Lightweight {result['lightweight_score']:.2f}%"
+    show_dataframe(
+        rows,
+        width="stretch",
+        hide_index=True,
+    )
 
-        st.write(line)
+
+def render_historical_archive_browser(
+    historical_dates,
+    historical_stats_by_date,
+):
+    if not historical_dates:
+        return
+
+    st.subheader("Historical archive consultation")
+    st.caption(
+        "Use this section to inspect how the route looked in past Street View "
+        "captures. It is a visual archive browser, independent from matching."
+    )
+
+    selected_date = st.selectbox(
+        "Date to inspect",
+        historical_dates,
+        index=len(historical_dates) - 1,
+        format_func=lambda date: (
+            f"{date} - {historical_stats_by_date[date]['images']} images"
+        ),
+        key="historical_browser_date",
+    )
+
+    selected_stats = historical_stats_by_date[selected_date]
+    archive_rows = get_historical_rows_for_date(selected_date)
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Selected date", selected_date)
+    with c2:
+        st.metric("Images", selected_stats["images"])
+    with c3:
+        st.metric("Route points", selected_stats["route_points"])
+    with c4:
+        st.metric(
+            "Best candidates",
+            selected_stats["rank_0"],
+        )
+
+    if not archive_rows:
+        st.warning("No local image found for this historical date.")
+        return
+
+    image_options = [
+        (
+            f"{index + 1:03d} | route {row.get('source_index', '?')} | "
+            f"rank {row.get('candidate_rank', '?')} | {row['filename']}"
+        )
+        for index, row in enumerate(archive_rows)
+    ]
+
+    selected_label = st.selectbox(
+        "Image to inspect",
+        image_options,
+        key="historical_browser_image",
+    )
+    selected_index = image_options.index(selected_label)
+    selected_row = archive_rows[selected_index]
+
+    left, right = st.columns([2, 1])
+
+    with left:
+        show_image(
+            selected_row["local_path"],
+            caption=selected_row["filename"],
+            width="stretch",
+        )
+
+    with right:
+        st.write("Image metadata")
+        st.metric("Route index", selected_row.get("source_index", ""))
+        st.metric("Candidate rank", selected_row.get("candidate_rank", ""))
+        st.write(f"**Pano ID:** {selected_row.get('historical_pano_id', '')}")
+        st.write(
+            "**Heading:** "
+            f"{selected_row.get('static_heading') or selected_row.get('heading', '')}"
+        )
+        st.write(
+            "**Distance to route:** "
+            f"{selected_row.get('distance_to_source_m', '')} m"
+        )
+
+    table_rows = [
+        {
+            "route_index": row.get("source_index", ""),
+            "rank": row.get("candidate_rank", ""),
+            "filename": row.get("filename", ""),
+            "heading": row.get("static_heading") or row.get("heading", ""),
+            "distance_m": row.get("distance_to_source_m", ""),
+            "pano_id": row.get("historical_pano_id", ""),
+        }
+        for row in archive_rows
+    ]
+
+    with st.expander("Metadata table for this date"):
+        show_dataframe(
+            table_rows,
+            width="stretch",
+            hide_index=True,
+        )
+
+    max_thumbnails = min(len(archive_rows), 60)
+    thumbnail_count = st.slider(
+        "Number of images to display",
+        min_value=1,
+        max_value=max_thumbnails,
+        value=min(12, max_thumbnails),
+        key="historical_thumbnail_count",
+    )
+
+    cols = st.columns(4)
+    for index, row in enumerate(archive_rows[:thumbnail_count]):
+        with cols[index % 4]:
+            show_image(
+                row["local_path"],
+                caption=(
+                    f"route {row.get('source_index', '?')} | "
+                    f"rank {row.get('candidate_rank', '?')}"
+                ),
+                width="stretch",
+            )
 
 
 # =========================================================
@@ -485,17 +1006,40 @@ st.set_page_config(
     layout="wide"
 )
 
-if os.path.exists(LOGO_PATH):
+st.markdown(APP_STYLE, unsafe_allow_html=True)
+
+ACTIVE_LOGO_PATH = first_existing_file(LOGO_CANDIDATES)
+ACTIVE_LOGO_DATA_URI = file_to_data_uri(ACTIVE_LOGO_PATH)
+
+if ACTIVE_LOGO_PATH:
     st.sidebar.image(
-        LOGO_PATH,
-        width=160
+        ACTIVE_LOGO_PATH,
+        width=180
     )
 
-st.title("Robot Visual Navigation V3")
+hero_logo_html = ""
+if ACTIVE_LOGO_DATA_URI:
+    hero_logo_html = (
+        f'<img class="rvn-hero-logo" src="{ACTIVE_LOGO_DATA_URI}" '
+        f'alt="Project logo">'
+    )
 
-st.write(
-    "Route planning, Street View acquisition, "
-    "MixVPR visual matching, ROSA reference filtering and offline replay localization."
+st.markdown(
+    f"""
+    <div class="rvn-hero">
+        <div class="rvn-hero-content">
+            <div>
+                <h1>Robot Visual Navigation V3</h1>
+                <p>
+                    Route planning, Street View acquisition, historical archive
+                    consultation, MixVPR localization and replay analysis.
+                </p>
+            </div>
+            {hero_logo_html}
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 
@@ -526,57 +1070,142 @@ for key, value in defaults.items():
 # SIDEBAR
 # =========================================================
 
-st.sidebar.header("Global settings")
+st.sidebar.header("Control panel")
 
-selection_mode = st.sidebar.radio(
-    "Point input mode",
+with st.sidebar.expander("Route and acquisition", expanded=True):
+    selection_mode = st.radio(
+        "Point input mode",
+        [
+            "Map selection",
+            "GPS coordinates"
+        ],
+        key="selection_mode",
+    )
+
+    step_m = st.number_input(
+        "Route sampling step (m)",
+        min_value=1,
+        max_value=20,
+        value=int(STEP_M),
+        key="step_m",
+    )
+
+    network_type = st.selectbox(
+        "OSM network type",
+        [
+            "walk",
+            "drive",
+            "bike",
+            "all"
+        ],
+        index=0,
+        key="network_type",
+    )
+
+    heading_mode = st.selectbox(
+        "Street View heading mode",
+        [
+            "route",
+            "north"
+        ],
+        index=0,
+        key="heading_mode",
+    )
+
+with st.sidebar.expander("Matching", expanded=True):
+    matching_mode_global = st.selectbox(
+        "Default matching mode",
+        list(SUPPORTED_MODES),
+        index=0,
+        key="matching_mode_global",
+    )
+
+st.sidebar.divider()
+st.sidebar.subheader("Database")
+
+historical_stats = get_historical_date_stats()
+historical_dates = [
+    item["date"]
+    for item in historical_stats
+]
+historical_stats_by_date = {
+    item["date"]: item
+    for item in historical_stats
+}
+
+database_source = st.sidebar.selectbox(
+    "Database source",
     [
-        "Map selection",
-        "GPS coordinates"
-    ],
-    key="selection_mode",
-)
-
-step_m = st.sidebar.number_input(
-    "Route sampling step (m)",
-    min_value=1,
-    max_value=20,
-    value=int(STEP_M),
-    key="step_m",
-)
-
-network_type = st.sidebar.selectbox(
-    "OSM network type",
-    [
-        "walk",
-        "drive",
-        "bike",
-        "all"
+        "Current Street View",
+        "Historical Street View",
     ],
     index=0,
-    key="network_type",
+    key="database_source",
 )
 
-heading_mode = st.sidebar.selectbox(
-    "Street View heading mode",
-    [
-        "route",
-        "north"
-    ],
-    index=0,
-    key="heading_mode",
+active_database_dir = STREETVIEW_IMAGES_DIR
+active_metadata_file = METADATA_FILE
+active_database_label = "Current Street View"
+active_database_count = len(get_image_files(STREETVIEW_IMAGES_DIR))
+selected_historical_date = None
+
+if database_source == "Historical Street View":
+    if not historical_dates:
+        st.sidebar.warning("No historical dataset found.")
+    else:
+        historical_options = [
+            f"{date} ({historical_stats_by_date[date]['images']} images)"
+            for date in historical_dates
+        ]
+        selected_historical_option = st.sidebar.selectbox(
+            "Historical date",
+            historical_options,
+            index=len(historical_options) - 1,
+            key="historical_date",
+        )
+        selected_historical_date = selected_historical_option.split(" ", 1)[0]
+        active_database_dir = os.path.join(
+            HISTORICAL_DATASET_DIR,
+            selected_historical_date,
+        )
+        active_metadata_file, active_database_count = prepare_historical_metadata(
+            selected_historical_date
+        )
+        active_database_label = (
+            f"Historical Street View {selected_historical_date}"
+        )
+        selected_stats = historical_stats_by_date[selected_historical_date]
+        st.sidebar.caption(
+            f"{selected_stats['images']} images | "
+            f"{selected_stats['route_points']} route points | "
+            f"rank0={selected_stats['rank_0']} "
+            f"rank1={selected_stats['rank_1']} "
+            f"rank2={selected_stats['rank_2']}"
+        )
+
+st.sidebar.info(
+    f"Active DB: {active_database_label} "
+    f"({active_database_count} images)"
 )
 
-matching_mode_global = st.sidebar.selectbox(
-    "Default matching mode",
-    list(SUPPORTED_MODES),
-    index=0,
-    key="matching_mode_global",
-)
+if historical_stats:
+    with st.sidebar.expander("Historical resources by date"):
+        show_dataframe(
+            historical_stats,
+            width="stretch",
+            hide_index=True,
+        )
 
 st.sidebar.caption(
     "Backend: MixVPR 4096D + ROSA filtering + local window trajectory search"
 )
+
+render_app_dashboard(
+    active_database_label,
+    active_database_count,
+)
+
+st.divider()
 
 
 # =========================================================
@@ -740,7 +1369,7 @@ with tab_route:
 
                 if st.button(
                     "Set as start point",
-                    use_container_width=True
+                    width="stretch"
                 ):
 
                     st.session_state.start_point = (
@@ -757,7 +1386,7 @@ with tab_route:
 
                 if st.button(
                     "Add waypoint",
-                    use_container_width=True
+                    width="stretch"
                 ):
 
                     st.session_state.waypoints.append(
@@ -774,7 +1403,7 @@ with tab_route:
 
                 if st.button(
                     "Set as end point",
-                    use_container_width=True
+                    width="stretch"
                 ):
 
                     point = (
@@ -815,7 +1444,7 @@ with tab_route:
 
         if st.button(
             "Create route",
-            use_container_width=True
+            width="stretch"
         ):
 
             if (
@@ -888,7 +1517,7 @@ with tab_route:
 
         if st.button(
             "Remove last waypoint",
-            use_container_width=True
+            width="stretch"
         ):
 
             if st.session_state.waypoints:
@@ -909,7 +1538,7 @@ with tab_route:
 
         if st.button(
             "Clear route",
-            use_container_width=True
+            width="stretch"
         ):
 
             st.session_state.start_point = None
@@ -957,11 +1586,43 @@ with tab_streetview:
         "2. Street View database"
     )
 
+    db1, db2, db3 = st.columns(3)
+
+    with db1:
+        st.metric("Active source", active_database_label)
+
+    with db2:
+        st.metric("Images", active_database_count)
+
+    with db3:
+        st.metric(
+            "Historical dates",
+            len(historical_stats),
+        )
+
+    if historical_stats:
+        st.write("Historical resources available")
+        show_dataframe(
+            historical_stats,
+            width="stretch",
+            hide_index=True,
+        )
+        render_historical_archive_browser(
+            historical_dates,
+            historical_stats_by_date,
+        )
+
     if st.session_state.route is None:
 
-        st.warning(
-            "Create a route first."
-        )
+        if database_source == "Current Street View":
+            st.warning(
+                "Create a route first to download a new current Street View database."
+            )
+        else:
+            st.info(
+                "Historical Street View is already available. "
+                "You can use it directly for Single Image or Replay localization."
+            )
 
     else:
 
@@ -971,8 +1632,8 @@ with tab_streetview:
         )
 
         if st.button(
-            "Download Street View database",
-            use_container_width=True
+            "Download current Street View database",
+            width="stretch"
         ):
 
             progress_bar = st.progress(0)
@@ -1070,13 +1731,13 @@ with tab_streetview:
                 )
 
     image_files = get_image_files(
-        STREETVIEW_IMAGES_DIR
+        active_database_dir
     )
 
     if image_files:
 
         st.subheader(
-            "Street View preview"
+            "Active database preview"
         )
 
         cols = st.columns(4)
@@ -1089,11 +1750,11 @@ with tab_streetview:
 
                 show_image(
                     os.path.join(
-                        STREETVIEW_IMAGES_DIR,
+                        active_database_dir,
                         filename
                     ),
                     caption=filename,
-                    use_container_width=True
+                    width="stretch"
                 )
 
 
@@ -1105,6 +1766,11 @@ with tab_single_match:
 
     st.header(
         "3. Single image localization"
+    )
+
+    st.info(
+        f"Localization database: {active_database_label} "
+        f"({active_database_count} images)"
     )
 
     uploaded_image = st.file_uploader(
@@ -1154,7 +1820,7 @@ with tab_single_match:
 
     if st.button(
         "Run localization",
-        use_container_width=True
+        width="stretch"
     ):
 
         if (
@@ -1166,10 +1832,16 @@ with tab_single_match:
                 "Upload an image first."
             )
 
+        elif active_database_count <= 0:
+
+            st.error(
+                "The selected Street View database is empty."
+            )
+
         else:
 
             metadata = load_metadata(
-                METADATA_FILE
+                active_metadata_file
             )
 
             with st.spinner(
@@ -1180,7 +1852,8 @@ with tab_single_match:
                     results = run_matching(
                         image_path=st.session_state.current_query_image,
                         mode=matching_mode,
-                        database_dir=STREETVIEW_IMAGES_DIR,
+                        database_dir=active_database_dir,
+                        metadata_file=active_metadata_file,
                         top_k=5,
                     )
                 except Exception as exc:
@@ -1194,7 +1867,9 @@ with tab_single_match:
             if results:
                 display_top_results(
                     results,
-                    metadata
+                    metadata,
+                    active_database_dir,
+                    active_database_label,
                 )
 
 
@@ -1206,6 +1881,11 @@ with tab_replay:
 
     st.header(
         "4. Offline replay localization"
+    )
+
+    st.info(
+        f"Replay database: {active_database_label} "
+        f"({active_database_count} images)"
     )
 
     uploaded_video = st.file_uploader(
@@ -1242,7 +1922,7 @@ with tab_replay:
 
         if st.button(
             "Extract frames",
-            use_container_width=True
+            width="stretch"
         ):
 
             progress_bar = st.progress(0)
@@ -1304,7 +1984,7 @@ with tab_replay:
 
         if st.button(
             "Run replay localization",
-            use_container_width=True
+            width="stretch"
         ):
 
             progress_bar = st.progress(0)
@@ -1313,12 +1993,18 @@ with tab_replay:
 
             st.session_state.replay_positions = []
 
+            if active_database_count <= 0:
+                st.error(
+                    "The selected Street View database is empty."
+                )
+                st.stop()
+
             try:
                 from core.replay_localizer import ReplayLocalizer
 
                 localizer = ReplayLocalizer(
-                    database_dir=STREETVIEW_IMAGES_DIR,
-                    metadata_file=METADATA_FILE,
+                    database_dir=active_database_dir,
+                    metadata_file=active_metadata_file,
                     matching_mode=replay_matching_mode,
                     top_k=5,
                     min_score=35,
@@ -1405,7 +2091,7 @@ with tab_replay:
         st.subheader("Robot frame to Street View matches")
         show_dataframe(
             st.session_state.replay_results,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -1417,7 +2103,7 @@ with tab_replay:
         )
         selected_match = st.session_state.replay_results[selected_row]
         frame_path = os.path.join(FRAMES_DIR, selected_match["frame"])
-        streetview_path = os.path.join(STREETVIEW_IMAGES_DIR, selected_match["best_match"])
+        streetview_path = os.path.join(active_database_dir, selected_match["best_match"])
         left, right = st.columns(2)
         with left:
             show_image(frame_path, caption=f"Robot: {selected_match['frame']}", width=500)
