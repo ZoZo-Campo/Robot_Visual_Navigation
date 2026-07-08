@@ -3,6 +3,7 @@ import sys
 import csv
 import time
 import base64
+import re
 
 import streamlit as st
 import folium
@@ -331,6 +332,11 @@ def safe_int(value, default=0):
         return int(float(value))
     except (TypeError, ValueError):
         return default
+
+
+def safe_slug(value):
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", value.strip().lower())
+    return slug.strip("_") or "database"
 
 
 def get_historical_date_stats():
@@ -1845,6 +1851,83 @@ with tab_streetview:
             if historical_result is not None:
                 st.session_state.historical_download_result = historical_result
                 safe_rerun()
+
+    st.subheader("MixVPR vector export")
+    st.caption(
+        "This generates the 4096-D MixVPR vectors for the active database and "
+        "stores them on disk. If the images have not changed, the existing VPR "
+        "cache is reused instead of running the neural model again."
+    )
+
+    if active_database_count <= 0:
+        st.warning("No active image database available for MixVPR vector export.")
+    else:
+        vector_output_dir = os.path.join(
+            VPR_OUTPUT_DIR,
+            "vector_databases",
+            safe_slug(active_database_label),
+        )
+        st.info(
+            f"Vector target: {os.path.relpath(vector_output_dir, BASE_DIR)}"
+        )
+
+        if st.button(
+            "Build / export MixVPR vectors for active database",
+            width="stretch",
+        ):
+            with st.spinner(
+                "Building or loading cached MixVPR vectors..."
+            ):
+                try:
+                    from matching.vpr_matcher import VPRMatcher
+
+                    vector_matcher = VPRMatcher(
+                        database_dir=active_database_dir,
+                        metadata_file=active_metadata_file,
+                        mode="MixVPR",
+                    )
+                    vector_metadata = vector_matcher.export_database_vectors(
+                        vector_output_dir
+                    )
+                except Exception as exc:
+                    st.error(
+                        "MixVPR vector export failed. Check the image database, "
+                        "metadata CSV and MixVPR checkpoint."
+                    )
+                    st.exception(exc)
+                    vector_metadata = None
+
+            if vector_metadata is not None:
+                st.success(
+                    "MixVPR vectors ready: "
+                    f"{vector_metadata['descriptor_rows']} images, "
+                    f"{vector_metadata['descriptor_dimension']} dimensions."
+                )
+                st.write(
+                    "Files:"
+                )
+                st.code(
+                    "\n".join(
+                        [
+                            os.path.join(
+                                vector_output_dir,
+                                "descriptors_streetview_mixvpr.npy",
+                            ),
+                            os.path.join(
+                                vector_output_dir,
+                                "descriptors_streetview_mixvpr_filtered.npy",
+                            ),
+                            os.path.join(
+                                vector_output_dir,
+                                "image_manifest.csv",
+                            ),
+                            os.path.join(
+                                vector_output_dir,
+                                "metadata.json",
+                            ),
+                        ]
+                    )
+                )
 
     image_files = get_image_files(
         active_database_dir

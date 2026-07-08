@@ -303,6 +303,70 @@ class VPRMatcher:
             self._write_outputs(Path(output_dir), frames, queries, scores, trajectory, results)
         return results
 
+    def export_database_vectors(self, output_dir: str | Path) -> dict:
+        if "mixvpr" not in self.database_descriptors:
+            raise RuntimeError("MixVPR descriptors are not available for this matcher.")
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        descriptors = self.database_descriptors["mixvpr"]
+        filtered_descriptors = descriptors[self.selected_indices]
+        np.save(output_dir / "descriptors_streetview_mixvpr.npy", descriptors)
+        np.save(
+            output_dir / "descriptors_streetview_mixvpr_filtered.npy",
+            filtered_descriptors,
+        )
+
+        selected_lookup = {
+            int(original_index): active_index
+            for active_index, original_index in enumerate(self.selected_indices)
+        }
+        with (output_dir / "image_manifest.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(
+                [
+                    "descriptor_row",
+                    "filtered_descriptor_row",
+                    "filename",
+                    "image_path",
+                    "lat",
+                    "lon",
+                    "selected_by_filter",
+                ]
+            )
+            for row, record in enumerate(self.database.records):
+                filtered_row = selected_lookup.get(row, "")
+                writer.writerow(
+                    [
+                        row,
+                        filtered_row,
+                        record.path.name,
+                        str(record.path),
+                        record.latitude if record.latitude is not None else "",
+                        record.longitude if record.longitude is not None else "",
+                        row in selected_lookup,
+                    ]
+                )
+
+        metadata = {
+            **self.summary,
+            "descriptor": "mixvpr",
+            "descriptor_dimension": int(descriptors.shape[1]) if descriptors.ndim == 2 else 0,
+            "descriptor_rows": int(descriptors.shape[0]),
+            "filtered_descriptor_rows": int(filtered_descriptors.shape[0]),
+            "database_dir": str(self.database_dir),
+            "metadata_file": str(self.metadata_file),
+            "descriptors_file": "descriptors_streetview_mixvpr.npy",
+            "filtered_descriptors_file": "descriptors_streetview_mixvpr_filtered.npy",
+            "manifest_file": "image_manifest.csv",
+        }
+        (output_dir / "metadata.json").write_text(
+            json.dumps(metadata, indent=2),
+            encoding="utf-8",
+        )
+        return metadata
+
     def _write_outputs(
         self,
         output_dir: Path,

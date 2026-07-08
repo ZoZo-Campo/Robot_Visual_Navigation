@@ -49,6 +49,23 @@ Historical image folders and metadata CSV files are generated outputs. They are
 not committed to Git because each new route should rebuild them from its own
 CSV.
 
+## MixVPR vector export
+
+The Street View tab includes `Build / export MixVPR vectors for active database`.
+It creates reusable 4096-D vectors for the active image database:
+
+```text
+data/results/vpr/vector_databases/<database_name>/
+  descriptors_streetview_mixvpr.npy
+  descriptors_streetview_mixvpr_filtered.npy
+  image_manifest.csv
+  metadata.json
+```
+
+The neural descriptors are also cached in `cache/vpr/`. If the images and model
+checkpoint have not changed, the app reloads the cached vectors instead of
+running MixVPR again.
+
 The original `Robot_Visual_Navigation_V2` project is not modified.
 
 ## macOS setup
