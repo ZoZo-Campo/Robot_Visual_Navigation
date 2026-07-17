@@ -1,0 +1,15 @@
+{
+  "mode": "MixVPR",
+  "device": "mps",
+  "references_before_filtering": 44,
+  "references_after_filtering": 11,
+  "filter_method": "rosa_v1",
+  "filter_counts": {
+    "wrong_direction": 3,
+    "kept_endpoint": 2,
+    "duplicate_panorama": 17,
+    "too_close": 11,
+    "kept": 9,
+    "sequence_outlier": 2
+  }
+}

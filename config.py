@@ -10,7 +10,7 @@ PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 # GOOGLE API
 # =========================================================
 
-API_KEY = "AIzaSyDOUCm3MkUnahNvQK6hPoHyfHjQWXN7uME"
+API_KEY = "YOUR_API_KEY_HERE"
 
 # =========================================================
 # DEFAULT MAP

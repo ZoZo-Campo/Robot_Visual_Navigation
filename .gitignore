@@ -5,7 +5,3 @@ venv/
 .venv/
 cache/
 data/robot_inputs/videos/
-data/results/vpr/
-data/streetview_historical/active_metadata.csv
-data/streetview_historical/mixvpr_dataset_by_date/
-weights/*.ckpt
