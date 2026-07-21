@@ -1,4 +1,4 @@
-"""Streamlit entry point for Robot Visual Navigation V3.
+"""Streamlit entry point for Robot Visual Navigation V4.
 
 Streamlit reruns this file after every widget interaction. Importing
 `ui.streamlit_app` directly would execute it only once because Python keeps

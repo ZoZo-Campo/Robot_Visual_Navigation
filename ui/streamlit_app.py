@@ -1008,7 +1008,7 @@ def render_historical_archive_browser(
 # =========================================================
 
 st.set_page_config(
-    page_title="Robot Visual Navigation V3",
+    page_title="Robot Visual Navigation V4",
     layout="wide"
 )
 
@@ -1035,10 +1035,10 @@ st.markdown(
     <div class="rvn-hero">
         <div class="rvn-hero-content">
             <div>
-                <h1>Robot Visual Navigation V3</h1>
+                <h1>Robot Visual Navigation V4</h1>
                 <p>
                     Route planning, Street View acquisition, historical archive
-                    consultation, MixVPR localization and replay analysis.
+                    consultation, MixVPR localization and visual path guidance.
                 </p>
             </div>
             {hero_logo_html}
@@ -1065,6 +1065,7 @@ defaults = {
     "replay_positions": [],
     "replay_results": [],
     "current_query_image": None,
+    "guidance_summary": None,
     "map_version": 0,
 }
 
@@ -1224,6 +1225,7 @@ st.divider()
     tab_streetview,
     tab_single_match,
     tab_replay,
+    tab_guidance,
     tab_exports,
 ) = st.tabs(
     [
@@ -1231,7 +1233,8 @@ st.divider()
         "2. Street View",
         "3. Single Image",
         "4. Replay",
-        "5. Exports",
+        "5. Guidance",
+        "6. Exports",
     ]
 )
 
@@ -2316,12 +2319,43 @@ with tab_replay:
                 width=500,
             )
 # =========================================================
-# TAB 5 — EXPORTS
+# TAB 5 — VISUAL GUIDANCE
+# =========================================================
+
+with tab_guidance:
+    from ui.guidance_page import render_guidance_tab
+
+    render_guidance_tab(
+        video_dir=ROBOT_VIDEOS_DIR,
+        results_dir=os.path.join(RESULTS_DIR, "guidance"),
+        frames_dir=FRAMES_DIR,
+        database_dir=active_database_dir,
+        metadata_file=active_metadata_file,
+        matching_mode=matching_mode_global,
+        database_label=active_database_label,
+        defaults={
+            "lateral_gain": GUIDANCE_LATERAL_GAIN,
+            "heading_gain": GUIDANCE_HEADING_GAIN,
+            "max_angular_z": GUIDANCE_MAX_ANGULAR_Z,
+            "nominal_linear_x": GUIDANCE_NOMINAL_LINEAR_X,
+            "deadband": GUIDANCE_DEADBAND,
+            "min_confidence": GUIDANCE_MIN_CONFIDENCE,
+            "reference_alignment_gain": GUIDANCE_REFERENCE_ALIGNMENT_GAIN,
+            "route_turn_gain": GUIDANCE_ROUTE_TURN_GAIN,
+            "local_stability_gain": GUIDANCE_LOCAL_STABILITY_GAIN,
+            "reference_interval_s": GUIDANCE_REFERENCE_INTERVAL_S,
+            "route_lookahead_images": GUIDANCE_ROUTE_LOOKAHEAD_IMAGES,
+        },
+    )
+
+
+# =========================================================
+# TAB 6 — EXPORTS
 # =========================================================
 
 with tab_exports:
 
-    st.header("5. Exports")
+    st.header("6. Exports")
 
     if os.path.exists(
         GPS_ROUTE_FILE

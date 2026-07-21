@@ -1,9 +1,53 @@
-# Robot Visual Navigation V3
+# Robot Visual Navigation V4
 
 Streamlit application for route planning, Google Street View acquisition and
-robot visual localization.
+robot visual localization, extended with numerical visual path guidance.
 
-## V3 matching pipeline
+## V4 Street View DB-guided navigation
+
+The `5. Guidance` page simulates future robot steering from a recorded camera
+video. The command is now based on the active Street View database and its
+route metadata, rather than on the visible road alone. The module:
+
+1. extracts one VPR anchor frame every two seconds;
+2. uses MixVPR and the local sequential window to select the corresponding
+   Street View reference and GPS position;
+3. reads the reference heading and the heading of upcoming route images;
+4. compares current path geometry with the route-facing reference image;
+5. adds local path-centre detection for short-term steering stability;
+6. generates `linear_x` and `angular_z` velocity commands;
+7. draws the active DB filename, index, VPR score, heading and correction;
+8. exports an annotated MP4 and a command CSV containing full evidence.
+
+The fusion is:
+
+```text
+command = Street View alignment + upcoming route turn + local stability
+```
+
+If no Street View match is available, the DB-guided mode outputs zero velocity
+instead of silently steering from the local image alone.
+
+The command convention already matches ROS `geometry_msgs/Twist`:
+
+```text
+angular_z > 0  -> turn left
+angular_z < 0  -> turn right
+angular_z = 0  -> go straight
+```
+
+When confidence falls below the configured threshold, both velocities are set
+to zero. This is an offline numerical prototype: it does not communicate with
+or command the real robot yet.
+
+Generated files are written to:
+
+```text
+data/results/guidance/guidance_db_annotated.mp4
+data/results/guidance/guidance_db_commands.csv
+```
+
+## V3 matching pipeline retained in V4
 
 The interface uses the embedded VPR backend stored in this V3 folder and
 provides three matching modes:
@@ -70,11 +114,11 @@ The original `Robot_Visual_Navigation_V2` project is not modified.
 
 ## macOS setup
 
-The V3 folder is self-contained. It embeds the VPR backend and the local
+The V4 folder is self-contained. It embeds the VPR backend and the local
 MixVPR checkpoint in:
 
 ```text
-Robot_Visual_Navigation_V3/
+Robot_Visual_Navigation_V4/
   vpr_backend/
   weights/resnet50_MixVPR_4096.ckpt
 ```
